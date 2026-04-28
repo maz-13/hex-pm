@@ -274,6 +274,7 @@ select.inp{cursor:pointer;}
 <main class="main">
   <div class="topbar">
     <div><h1 id="view-title">All Projects</h1><div class="topbar-meta" id="view-meta"></div></div>
+    <span id="sync-status" style="font-size:10px;color:var(--t3);transition:opacity .5s;opacity:0;margin-right:8px;"></span>
     <button class="btn-new" id="btn-new-main" onclick="handleNewBtn()">+ New Project</button>
   </div>
   <div class="content">
@@ -704,30 +705,81 @@ function updateRangeLabel() {
 // ── Projects ──
 let EXISTING = [];
 
+// ── Sync status indicator ──
+let _syncTimer = null;
+function setSyncStatus(status) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  clearTimeout(_syncTimer);
+  el.style.opacity = '1';
+  if (status === 'syncing') { el.textContent = '↻ Syncing'; el.style.color = 'var(--t3)'; }
+  else if (status === 'ok') {
+    el.textContent = '● Synced'; el.style.color = '#34D399';
+    _syncTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+  } else {
+    el.textContent = '⚠ Offline'; el.style.color = '#F87171';
+  }
+}
+
 // ── Persistence ──
-function saveData() {
+function normalizeProjects() {
+  EXISTING.forEach(proj => {
+    if (!proj.proposal)      proj.proposal     = { status:'pending', url:'' };
+    if (!proj.contract)      proj.contract     = { status:'pending', url:'' };
+    if (!proj.notes)         proj.notes        = '';
+    if (!proj.team)          proj.team         = {};
+    if (!proj.completedDels) proj.completedDels = {};
+    if (!proj.overrides)     proj.overrides    = {};
+    if (!proj.deliverables)  proj.deliverables  = [];
+  });
+}
+
+async function saveData() {
+  // Write localStorage immediately so the UI never blocks
   try {
     localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
     localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
-  } catch(e) { console.warn('Save failed', e); }
+  } catch(e) {}
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projects: EXISTING, team: TEAM_MEMBERS }),
+    });
+    setSyncStatus(res.ok ? 'ok' : 'error');
+    if (!res.ok) console.warn('Save failed', res.status);
+  } catch(e) { setSyncStatus('error'); console.warn('Save failed', e); }
 }
 
-function loadData() {
+async function loadData() {
+  // Load localStorage first for an instant first render
   try {
     const p = localStorage.getItem('hex-pm-v1-projects');
     const t = localStorage.getItem('hex-pm-v1-team');
     if (p) EXISTING      = JSON.parse(p);
     if (t) TEAM_MEMBERS  = JSON.parse(t);
-    // Guarantee required fields on every project
-    EXISTING.forEach(proj => {
-      if (!proj.proposal)     proj.proposal     = { status:'pending', url:'' };
-      if (!proj.contract)     proj.contract     = { status:'pending', url:'' };
-      if (!proj.notes)        proj.notes        = '';
-      if (!proj.team)         proj.team         = {};
-      if (!proj.completedDels) proj.completedDels = {};
-      if (!proj.overrides)   proj.overrides    = {};
-    });
-  } catch(e) { console.warn('Load failed', e); }
+  } catch(e) {}
+  normalizeProjects();
+
+  // Fetch from Neon (source of truth) and refresh if different
+  setSyncStatus('syncing');
+  try {
+    const res  = await fetch('/api/data');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    EXISTING     = data.projects || [];
+    TEAM_MEMBERS = data.team     || [];
+    normalizeProjects();
+    try {
+      localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
+      localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
+    } catch(e) {}
+    setSyncStatus('ok');
+  } catch(e) {
+    setSyncStatus('error');
+    console.warn('API load failed, using localStorage fallback', e);
+  }
 }
 
 // ── Project helpers ──
@@ -1833,12 +1885,25 @@ function createProject() {
 }
 
 // ── Page init ──
-loadData();
-document.getElementById('sidebar-date').textContent =
-  TODAY.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
-const _tb = document.getElementById('team-badge');
-if (_tb) _tb.textContent = TEAM_MEMBERS.length;
-renderProjects();
+(async () => {
+  document.getElementById('sidebar-date').textContent =
+    TODAY.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+  // Render immediately from localStorage (instant UI)
+  try {
+    const p = localStorage.getItem('hex-pm-v1-projects');
+    const t = localStorage.getItem('hex-pm-v1-team');
+    if (p) EXISTING      = JSON.parse(p);
+    if (t) TEAM_MEMBERS  = JSON.parse(t);
+    normalizeProjects();
+  } catch(e) {}
+  const _tb = document.getElementById('team-badge');
+  if (_tb) _tb.textContent = TEAM_MEMBERS.length;
+  renderProjects();
+  // Then sync from Supabase and refresh if data changed
+  await loadData();
+  if (_tb) _tb.textContent = TEAM_MEMBERS.length;
+  renderProjects();
+})();
 </script>
 </body>
 </html>
