@@ -275,6 +275,7 @@ select.inp{cursor:pointer;}
   <div class="topbar">
     <div><h1 id="view-title">All Projects</h1><div class="topbar-meta" id="view-meta"></div></div>
     <span id="sync-status" style="font-size:10px;color:var(--t3);transition:opacity .5s;opacity:0;margin-right:8px;"></span>
+    <button id="btn-filter-completed" onclick="toggleShowCompleted()" style="font-size:11px;padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:var(--s2);color:var(--t2);cursor:pointer;margin-right:8px;white-space:nowrap;">Hide Completed</button>
     <button class="btn-new" id="btn-new-main" onclick="handleNewBtn()">+ New Project</button>
   </div>
   <div class="content">
@@ -466,7 +467,7 @@ select.inp{cursor:pointer;}
 
     <!-- Stats -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-bottom:1px solid var(--border);">
-      <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Kickoff</div><div id="pp-kickoff" style="font-size:12px;font-weight:500;"></div></div>
+      <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Kickoff</div><input type="date" id="pp-kickoff-input" onchange="ppUpdateKickoff(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Est. End</div><div id="pp-end" style="font-size:12px;font-weight:500;"></div></div>
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Deliverables</div><div id="pp-value" style="font-size:12px;font-weight:500;"></div></div>
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Progress</div><div id="pp-progress-label" style="font-size:12px;font-weight:500;"></div></div>
@@ -494,6 +495,7 @@ select.inp{cursor:pointer;}
   </div>
   <div class="panel-footer">
     <button class="btn-cancel" onclick="closeProjPanel()">Close</button>
+    <button class="btn-cancel" onclick="deleteProject(projPanelCtx,'proj')" style="color:#ff6b6b;border-color:#ff6b6b33;">Delete</button>
     <button id="pp-complete-btn" class="btn-create" onclick="toggleProjComplete()" style="flex:2;"></button>
   </div>
 </div>
@@ -511,7 +513,7 @@ select.inp{cursor:pointer;}
   <div class="panel-body">
     <!-- Dates strip -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
-      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><div id="cp-start" style="font-size:12px;font-weight:500;"></div></div>
+      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><input type="date" id="cp-kickoff-input" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><div id="cp-end" style="font-size:12px;font-weight:500;"></div></div>
     </div>
 
@@ -557,6 +559,7 @@ select.inp{cursor:pointer;}
   </div>
   <div class="panel-footer">
     <button class="btn-cancel" onclick="closeClientPanel()">Close</button>
+    <button class="btn-cancel" onclick="deleteProject(clientPanelCtx,'client')" style="color:#ff6b6b;border-color:#ff6b6b33;">Delete</button>
     <button class="btn-create" onclick="saveClientPanel()">Save</button>
   </div>
 </div>
@@ -806,6 +809,19 @@ async function loadData() {
   }
 }
 
+// ── Show/hide completed filter ──
+let SHOW_COMPLETED = true;
+function toggleShowCompleted() {
+  SHOW_COMPLETED = !SHOW_COMPLETED;
+  const btn = document.getElementById('btn-filter-completed');
+  btn.textContent = SHOW_COMPLETED ? 'Hide Completed' : 'Show Completed';
+  btn.style.background = SHOW_COMPLETED ? 'var(--s2)' : 'var(--accent)';
+  btn.style.color = SHOW_COMPLETED ? 'var(--t2)' : '#000';
+  btn.style.borderColor = SHOW_COMPLETED ? 'var(--border)' : 'var(--accent)';
+  renderProjects();
+  renderTimeline();
+}
+
 // ── Project helpers ──
 function getProjEnd(proj) {
   if (!proj.deliverables || !proj.deliverables.length) return parseDate(proj.kickoff);
@@ -830,6 +846,54 @@ function getCurrentDeliverable(proj) {
   return { del: DELIVERABLES[lastId], delId: lastId };
 }
 
+// Freeze all non-overridden deliverable positions as absolute overrides so kickoff can change freely
+function freezeDeliverablePositions(proj) {
+  if (!proj.deliverables || !proj.deliverables.length) return;
+  if (!proj.overrides) proj.overrides = {};
+  let cursor = parseDate(proj.kickoff);
+  proj.deliverables.forEach(delId => {
+    const del = DELIVERABLES[delId];
+    if (proj.overrides[delId]) {
+      cursor = parseDate(proj.overrides[delId].endDate);
+    } else {
+      const start = new Date(cursor);
+      const end = addDays(cursor, del.weeks * 7);
+      proj.overrides[delId] = { startDate: dateToStr(start), endDate: dateToStr(end) };
+      cursor = end;
+    }
+  });
+}
+
+function ppUpdateKickoff(val) {
+  if (!projPanelCtx || !val) return;
+  freezeDeliverablePositions(projPanelCtx);
+  projPanelCtx.kickoff = val;
+  const endDate = getProjEnd(projPanelCtx);
+  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  document.getElementById('pp-end').textContent = projPanelCtx.deliverables && projPanelCtx.deliverables.length ? fmt(endDate) : '—';
+  saveData();
+  renderTimeline();
+}
+
+function deleteProject(proj, panel) {
+  if (!proj) return;
+  if (!confirm(`Delete "${proj.name}"? This cannot be undone.`)) return;
+  const idx = EXISTING.indexOf(proj);
+  if (idx !== -1) EXISTING.splice(idx, 1);
+  saveData();
+  if (panel === 'proj') {
+    document.getElementById('proj-panel').classList.remove('open');
+    document.getElementById('proj-overlay').classList.remove('open');
+    projPanelCtx = null;
+  } else {
+    document.getElementById('client-panel').classList.remove('open');
+    document.getElementById('client-overlay').classList.remove('open');
+    clientPanelCtx = null;
+  }
+  renderProjects();
+  renderTimeline();
+}
+
 // ── Render projects table ──
 function renderProjects() {
   const tbody = document.getElementById('proj-tbl-body');
@@ -844,14 +908,17 @@ function renderProjects() {
     : '';
 
   const badge = document.getElementById('proj-badge');
-  if (badge) badge.textContent = EXISTING.filter(p => !p.completed).length;
+  if (badge) badge.textContent = active.length;
 
-  if (!EXISTING.length) {
-    tbody.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--t3);font-size:13px;">No projects yet. Click <strong style="color:var(--t2);">+ New Project</strong> to get started.</div>`;
+  const visible = SHOW_COMPLETED ? EXISTING : active;
+  if (!visible.length) {
+    tbody.innerHTML = EXISTING.length
+      ? `<div style="padding:40px 20px;text-align:center;color:var(--t3);font-size:13px;">All projects are completed. <span style="cursor:pointer;color:var(--accent);" onclick="toggleShowCompleted()">Show completed</span></div>`
+      : `<div style="padding:40px 20px;text-align:center;color:var(--t3);font-size:13px;">No projects yet. Click <strong style="color:var(--t2);">+ New Project</strong> to get started.</div>`;
     return;
   }
 
-  EXISTING.forEach(proj => {
+  visible.forEach(proj => {
     const currDel = getCurrentDeliverable(proj);
     const del     = currDel ? currDel.del : null;
     const delId   = currDel ? currDel.delId : null;
@@ -897,7 +964,7 @@ function openClientPanel(proj) {
   document.getElementById('cp-sub').textContent   = currDel
     ? `Current: ${currDel.del.name}`
     : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
-  document.getElementById('cp-start').textContent = fmt(kickoff);
+  document.getElementById('cp-kickoff-input').value = dateToStr(kickoff);
   document.getElementById('cp-end').textContent   = proj.deliverables && proj.deliverables.length ? fmt(endDate) : '—';
   document.getElementById('cp-notes').value       = proj.notes || '';
 
@@ -927,6 +994,11 @@ function closeClientPanel() {
 
 function saveClientPanel() {
   if (!clientPanelCtx) return;
+  const newKickoff = document.getElementById('cp-kickoff-input').value;
+  if (newKickoff && newKickoff !== clientPanelCtx.kickoff) {
+    freezeDeliverablePositions(clientPanelCtx);
+    clientPanelCtx.kickoff = newKickoff;
+  }
   clientPanelCtx.notes            = document.getElementById('cp-notes').value;
   clientPanelCtx.proposal.url     = document.getElementById('cp-prop-url').value.trim();
   clientPanelCtx.contract.url     = document.getElementById('cp-cont-url').value.trim();
@@ -1127,12 +1199,15 @@ function renderTimeline() {
   indicator.appendChild(iLine);
   barsScroll.appendChild(indicator);
 
-  if (!EXISTING.length) {
-    namesBody.innerHTML = `<div style="padding:20px 14px;font-size:12px;color:var(--t3);">No projects yet.</div>`;
+  const tlVisible = SHOW_COMPLETED ? EXISTING : EXISTING.filter(p => !p.completed);
+  if (!tlVisible.length) {
+    namesBody.innerHTML = EXISTING.length
+      ? `<div style="padding:20px 14px;font-size:12px;color:var(--t3);">All completed — <span style="cursor:pointer;color:var(--accent);" onclick="toggleShowCompleted()">show all</span></div>`
+      : `<div style="padding:20px 14px;font-size:12px;color:var(--t3);">No projects yet.</div>`;
     return;
   }
 
-  EXISTING.forEach(proj => {
+  tlVisible.forEach(proj => {
     // Name row (in the fixed left column)
     const nameRow = document.createElement('div');
     nameRow.className = 'tl-name-row';
@@ -1435,7 +1510,7 @@ function openProjPanel(proj) {
   const kickoff = parseDate(proj.kickoff);
   const endDate = getProjEnd(proj);
   const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-  document.getElementById('pp-kickoff').textContent = fmt(kickoff);
+  document.getElementById('pp-kickoff-input').value = dateToStr(kickoff);
   document.getElementById('pp-end').textContent     = (proj.deliverables && proj.deliverables.length) ? fmt(endDate) : '—';
 
   // Sub line
