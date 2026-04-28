@@ -480,9 +480,10 @@ select.inp{cursor:pointer;}
     </div>
 
     <!-- Deliverables list -->
-    <div style="padding:16px 20px;">
+    <div style="padding:16px 20px 12px;">
       <div class="label" style="margin-bottom:10px;">Deliverables</div>
-      <div id="pp-del-list" style="display:flex;flex-direction:column;gap:2px;"></div>
+      <div id="pp-del-list" style="display:flex;flex-direction:column;gap:2px;margin-bottom:8px;"></div>
+      <div id="pp-del-add" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
     </div>
 
     <!-- Notes -->
@@ -517,10 +518,7 @@ select.inp{cursor:pointer;}
     <!-- Deliverables -->
     <div class="label" style="margin-bottom:8px;">Deliverables</div>
     <div id="cp-del-list" style="display:flex;flex-direction:column;gap:2px;margin-bottom:8px;"></div>
-    <div style="display:flex;gap:6px;margin-bottom:20px;">
-      <select id="cp-del-select" class="inp" style="flex:1;font-size:12px;"></select>
-      <button onclick="cpAddDel()" style="padding:7px 14px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--t2);cursor:pointer;font-size:12px;white-space:nowrap;transition:all .12s;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--t2)'">+ Add</button>
-    </div>
+    <div id="cp-del-add" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:20px;"></div>
 
     <!-- Proposal -->
     <div class="label" style="margin-bottom:8px;">Proposal</div>
@@ -971,57 +969,64 @@ function cpRenderContStatus(status) {
   badge.textContent = label;
 }
 
-function renderCpDelList() {
-  const proj = clientPanelCtx;
-  const list = document.getElementById('cp-del-list');
-  const sel  = document.getElementById('cp-del-select');
+// ── Shared deliverable add/remove chips UI ──
+function renderDelRows(proj, listElId, removeFn) {
+  const list = document.getElementById(listElId);
+  if (!list) return;
   list.innerHTML = '';
-
-  (proj.deliverables || []).forEach(delId => {
+  const dels = proj.deliverables || [];
+  if (!dels.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:2px 0 6px;">No deliverables yet.</div>';
+    return;
+  }
+  dels.forEach(delId => {
     const d = DELIVERABLES[delId];
     if (!d) return;
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
+    row.style.cssText = 'display:flex;align-items:center;gap:9px;padding:8px 12px;background:var(--s2);border:1px solid var(--border);border-left:3px solid ' + d.color + ';border-radius:6px;transition:background .1s;';
     row.innerHTML = `
-      <span style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0;"></span>
       <span style="flex:1;font-size:12px;font-weight:500;">${d.name}</span>
-      <span style="font-size:10px;color:var(--t3);">${d.weeks}w</span>
-      <button onclick="cpRemoveDel('${delId}')" style="background:none;border:none;cursor:pointer;color:var(--t3);font-size:14px;padding:0 4px;line-height:1;border-radius:3px;" title="Remove" onmouseenter="this.style.color='#F87171'" onmouseleave="this.style.color='var(--t3)'">✕</button>`;
+      <span style="font-size:10px;color:var(--t3);white-space:nowrap;">${d.weeks}w</span>
+      <button onclick="event.stopPropagation();(${removeFn})('${delId}')" style="background:none;border:none;cursor:pointer;color:var(--t4);font-size:13px;padding:0 2px;line-height:1;border-radius:3px;transition:color .1s;" onmouseenter="this.style.color='#F87171'" onmouseleave="this.style.color='var(--t4)'" title="Remove">✕</button>`;
     list.appendChild(row);
   });
-
-  if (!proj.deliverables || !proj.deliverables.length) {
-    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:4px 0 8px;">No deliverables yet.</div>';
-  }
-
-  const added = new Set(proj.deliverables || []);
-  sel.innerHTML = '';
-  let available = 0;
-  Object.entries(DELIVERABLES).forEach(([id, d]) => {
-    if (added.has(id)) return;
-    available++;
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = d.name;
-    sel.appendChild(opt);
-  });
-  sel.parentElement.style.display = available === 0 ? 'none' : '';
 }
 
-function cpAddDel() {
-  const proj  = clientPanelCtx;
-  const sel   = document.getElementById('cp-del-select');
-  const delId = sel.value;
-  if (!delId || !DELIVERABLES[delId]) return;
+function renderAddChips(proj, addElId, addFn) {
+  const addEl = document.getElementById(addElId);
+  if (!addEl) return;
+  addEl.innerHTML = '';
+  const added = new Set(proj.deliverables || []);
+  let count = 0;
+  Object.entries(DELIVERABLES).forEach(([id, d]) => {
+    if (added.has(id)) return;
+    count++;
+    const chip = document.createElement('button');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:20px;color:var(--t3);cursor:pointer;font-size:11px;transition:all .12s;font-family:inherit;';
+    chip.innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:${d.color};flex-shrink:0;"></span>${d.name}`;
+    chip.onmouseenter = () => { chip.style.borderColor = d.color; chip.style.color = 'var(--text)'; chip.style.background = 'var(--s2)'; };
+    chip.onmouseleave = () => { chip.style.borderColor = 'var(--border)'; chip.style.color = 'var(--t3)'; chip.style.background = 'transparent'; };
+    chip.onclick = () => (addFn)(id);
+    addEl.appendChild(chip);
+  });
+  if (count === 0) addEl.innerHTML = '<span style="font-size:11px;color:var(--t4);">All deliverables added</span>';
+}
+
+// ── Client panel deliverables ──
+function renderCpDelList() {
+  const proj = clientPanelCtx;
+  renderDelRows(proj, 'cp-del-list', 'cpRemoveDel');
+  renderAddChips(proj, 'cp-del-add', cpPanelAdd);
+}
+
+function cpPanelAdd(delId) {
+  const proj = clientPanelCtx;
   if (!proj.deliverables) proj.deliverables = [];
   if (proj.deliverables.includes(delId)) return;
   proj.deliverables.push(delId);
   saveData();
   renderCpDelList();
-  const endDate = getProjEnd(proj);
-  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  document.getElementById('cp-end').textContent = fmt(endDate);
-  document.getElementById('cp-sub').textContent = `Current: ${getCurrentDeliverable(proj).del.name}`;
+  _cpRefreshDates();
   renderProjects();
 }
 
@@ -1033,14 +1038,19 @@ function cpRemoveDel(delId) {
   if (proj.completedDels) delete proj.completedDels[delId];
   saveData();
   renderCpDelList();
+  _cpRefreshDates();
+  renderProjects();
+}
+
+function _cpRefreshDates() {
+  const proj = clientPanelCtx;
   const endDate = getProjEnd(proj);
   const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const currDel = getCurrentDeliverable(proj);
   document.getElementById('cp-end').textContent = proj.deliverables.length ? fmt(endDate) : '—';
-  document.getElementById('cp-sub').textContent = currDel
-    ? `Current: ${currDel.del.name}`
+  const curr = getCurrentDeliverable(proj);
+  document.getElementById('cp-sub').textContent = curr
+    ? `Current: ${curr.del.name}`
     : `Kickoff ${parseDate(proj.kickoff).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
-  renderProjects();
 }
 
 // ── Render timeline ──
@@ -1423,14 +1433,10 @@ function openProjPanel(proj) {
 
   // Kickoff + end date
   const kickoff = parseDate(proj.kickoff);
-  let cursor = new Date(proj.kickoff);
-  proj.deliverables.forEach(id => {
-    const ov = proj.overrides && proj.overrides[id];
-    cursor = ov ? new Date(ov.endDate) : addDays(cursor, DELIVERABLES[id].weeks * 7);
-  });
+  const endDate = getProjEnd(proj);
   const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   document.getElementById('pp-kickoff').textContent = fmt(kickoff);
-  document.getElementById('pp-end').textContent     = fmt(cursor);
+  document.getElementById('pp-end').textContent     = (proj.deliverables && proj.deliverables.length) ? fmt(endDate) : '—';
 
   // Sub line
   const daysIn = Math.round((TODAY - kickoff) / 86400000);
@@ -1468,20 +1474,23 @@ function renderProjDelList() {
   const list = document.getElementById('pp-del-list');
   list.innerHTML = '';
 
-  let cursor = new Date(proj.kickoff);
+  if (!proj.deliverables || !proj.deliverables.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:2px 0 6px;">No deliverables yet.</div>';
+    renderAddChips(proj, 'pp-del-add', ppPanelAdd);
+    return;
+  }
+
+  let cursor = parseDate(proj.kickoff);
   proj.deliverables.forEach(delId => {
     const del      = DELIVERABLES[delId];
     const ov       = proj.overrides && proj.overrides[delId];
-    const start    = ov ? new Date(ov.startDate) : new Date(cursor);
-    const end      = ov ? new Date(ov.endDate)   : addDays(cursor, del.weeks * 7);
+    const end      = ov ? parseDate(ov.endDate) : addDays(cursor, del.weeks * 7);
     cursor = end;
     const isDone   = proj.completedDels && proj.completedDels[delId];
     const assigned = proj.team && proj.team[delId] ? proj.team[delId] : [];
 
     const row = document.createElement('div');
-    row.style.cssText = `display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;background:var(--s2);border:1px solid var(--border);cursor:pointer;transition:border-color .12s;${isDone ? 'opacity:0.5;' : ''}`;
-    row.onmouseenter = () => { row.style.borderColor = del.color; };
-    row.onmouseleave = () => { row.style.borderColor = 'var(--border)'; };
+    row.style.cssText = `display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:7px;background:var(--s2);border:1px solid var(--border);border-left:3px solid ${del.color};cursor:pointer;transition:background .1s;${isDone ? 'opacity:0.45;' : ''}`;
 
     const avs = assigned.map(tid => {
       const m = TEAM_MEMBERS.find(t => t.id === tid);
@@ -1489,27 +1498,67 @@ function renderProjDelList() {
     }).join('');
 
     row.innerHTML = `
-      <span style="width:10px;height:10px;border-radius:50%;background:${del.color};flex-shrink:0;${isDone ? 'outline:2px solid var(--accent);' : ''}"></span>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:500;${isDone ? 'text-decoration:line-through;color:var(--t3);' : ''}">${del.name}</div>
         <div style="font-size:10px;color:var(--t3);">${end.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
       </div>
-      <div style="display:flex;margin-right:4px;">${avs}</div>
-      <span style="font-size:14px;color:${isDone ? 'var(--accent)' : 'var(--t4)'};">${isDone ? '✓' : '○'}</span>`;
+      <div style="display:flex;margin-right:2px;">${avs}</div>
+      <span style="font-size:14px;color:${isDone ? 'var(--accent)' : 'var(--t4)'};">${isDone ? '✓' : '○'}</span>
+      <button class="pp-rm-btn" onclick="event.stopPropagation();ppRemoveDel('${delId}')" style="background:none;border:none;cursor:pointer;color:var(--t4);font-size:13px;padding:0 2px;line-height:1;border-radius:3px;opacity:0;transition:all .1s;margin-left:2px;" title="Remove deliverable">✕</button>`;
+
+    row.onmouseenter = () => { row.style.background = 'var(--s3)'; row.querySelector('.pp-rm-btn').style.opacity = '1'; };
+    row.onmouseleave = () => { row.style.background = 'var(--s2)'; row.querySelector('.pp-rm-btn').style.opacity = '0'; };
+    row.querySelector('.pp-rm-btn').onmouseenter = function() { this.style.color = '#F87171'; };
+    row.querySelector('.pp-rm-btn').onmouseleave = function() { this.style.color = 'var(--t4)'; };
 
     row.onclick = () => {
       if (!proj.completedDels) proj.completedDels = {};
       proj.completedDels[delId] = !proj.completedDels[delId];
       saveData();
       renderProjDelList();
-      // Update progress
-      const done  = proj.deliverables.filter(id => proj.completedDels && proj.completedDels[id]).length;
-      const total = proj.deliverables.length;
-      document.getElementById('pp-progress-label').textContent = `${done} / ${total} done`;
-      document.getElementById('pp-progress-bar').style.width = (total ? Math.round(done/total*100) : 0) + '%';
+      _ppRefreshStats();
     };
     list.appendChild(row);
   });
+
+  renderAddChips(proj, 'pp-del-add', ppPanelAdd);
+}
+
+function ppPanelAdd(delId) {
+  const proj = projPanelCtx;
+  if (!proj.deliverables) proj.deliverables = [];
+  if (proj.deliverables.includes(delId)) return;
+  proj.deliverables.push(delId);
+  saveData();
+  renderProjDelList();
+  _ppRefreshStats();
+  renderTimeline();
+  renderProjects();
+}
+
+function ppRemoveDel(delId) {
+  const proj = projPanelCtx;
+  proj.deliverables = (proj.deliverables || []).filter(id => id !== delId);
+  if (proj.team)          delete proj.team[delId];
+  if (proj.overrides)     delete proj.overrides[delId];
+  if (proj.completedDels) delete proj.completedDels[delId];
+  saveData();
+  renderProjDelList();
+  _ppRefreshStats();
+  renderTimeline();
+  renderProjects();
+}
+
+function _ppRefreshStats() {
+  const proj  = projPanelCtx;
+  const done  = (proj.deliverables || []).filter(id => proj.completedDels && proj.completedDels[id]).length;
+  const total = (proj.deliverables || []).length;
+  document.getElementById('pp-value').textContent    = total + ' deliverable' + (total !== 1 ? 's' : '');
+  document.getElementById('pp-progress-label').textContent = `${done} / ${total} done`;
+  document.getElementById('pp-progress-bar').style.width   = (total ? Math.round(done/total*100) : 0) + '%';
+  const endDate = getProjEnd(proj);
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  document.getElementById('pp-end').textContent = total ? fmt(endDate) : '—';
 }
 
 function closeProjPanel() {
