@@ -753,29 +753,55 @@ async function saveData() {
 }
 
 async function loadData() {
-  // Load localStorage first for an instant first render
+  // Load localStorage for instant first render
+  let localProjects = [], localTeam = [];
   try {
     const p = localStorage.getItem('hex-pm-v1-projects');
     const t = localStorage.getItem('hex-pm-v1-team');
-    if (p) EXISTING      = JSON.parse(p);
-    if (t) TEAM_MEMBERS  = JSON.parse(t);
+    if (p) localProjects = JSON.parse(p);
+    if (t) localTeam     = JSON.parse(t);
   } catch(e) {}
+  EXISTING     = localProjects;
+  TEAM_MEMBERS = localTeam;
   normalizeProjects();
 
-  // Fetch from Neon (source of truth) and refresh if different
   setSyncStatus('syncing');
   try {
     const res  = await fetch('/api/data');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    EXISTING     = data.projects || [];
-    TEAM_MEMBERS = data.team     || [];
-    normalizeProjects();
-    try {
-      localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
-      localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
-    } catch(e) {}
-    setSyncStatus('ok');
+    const remoteProjects = data.projects || [];
+    const remoteTeam     = data.team     || [];
+
+    const neonHasData    = remoteProjects.length > 0 || remoteTeam.length > 0;
+    const localHasData   = localProjects.length  > 0 || localTeam.length  > 0;
+    const alreadySynced  = !!localStorage.getItem('hex-pm-neon-synced');
+
+    if (!neonHasData && localHasData && !alreadySynced) {
+      // One-time migration: push local data up to Neon
+      const r = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: localProjects, team: localTeam }),
+      });
+      if (r.ok) {
+        localStorage.setItem('hex-pm-neon-synced', '1');
+        setSyncStatus('ok');
+      } else {
+        setSyncStatus('error');
+      }
+    } else {
+      // Neon is source of truth
+      EXISTING     = remoteProjects;
+      TEAM_MEMBERS = remoteTeam;
+      normalizeProjects();
+      try {
+        localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
+        localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
+        localStorage.setItem('hex-pm-neon-synced', '1');
+      } catch(e) {}
+      setSyncStatus('ok');
+    }
   } catch(e) {
     setSyncStatus('error');
     console.warn('API load failed, using localStorage fallback', e);
