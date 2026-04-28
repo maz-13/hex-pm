@@ -507,11 +507,18 @@ select.inp{cursor:pointer;}
     <button class="btn-close" onclick="closeClientPanel()">✕</button>
   </div>
   <div class="panel-body">
-    <!-- Stage + dates strip -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
-      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Stage</div><div id="cp-stage" style="font-size:12px;font-weight:500;"></div></div>
+    <!-- Dates strip -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><div id="cp-start" style="font-size:12px;font-weight:500;"></div></div>
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><div id="cp-end" style="font-size:12px;font-weight:500;"></div></div>
+    </div>
+
+    <!-- Deliverables -->
+    <div class="label" style="margin-bottom:8px;">Deliverables</div>
+    <div id="cp-del-list" style="display:flex;flex-direction:column;gap:2px;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:6px;margin-bottom:20px;">
+      <select id="cp-del-select" class="inp" style="flex:1;font-size:12px;"></select>
+      <button onclick="cpAddDel()" style="padding:7px 14px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--t2);cursor:pointer;font-size:12px;white-space:nowrap;transition:all .12s;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--t2)'">+ Add</button>
     </div>
 
     <!-- Proposal -->
@@ -725,19 +732,21 @@ function loadData() {
 
 // ── Project helpers ──
 function getProjEnd(proj) {
+  if (!proj.deliverables || !proj.deliverables.length) return parseDate(proj.kickoff);
   let cursor = parseDate(proj.kickoff);
   proj.deliverables.forEach(delId => {
     const ov = proj.overrides && proj.overrides[delId];
-    cursor = ov ? new Date(ov.endDate) : addDays(cursor, DELIVERABLES[delId].weeks * 7);
+    cursor = ov ? parseDate(ov.endDate) : addDays(cursor, DELIVERABLES[delId].weeks * 7);
   });
   return cursor;
 }
 
 function getCurrentDeliverable(proj) {
+  if (!proj.deliverables || !proj.deliverables.length) return null;
   let cursor = parseDate(proj.kickoff);
   for (const delId of proj.deliverables) {
     const ov  = proj.overrides && proj.overrides[delId];
-    const end = ov ? new Date(ov.endDate) : addDays(cursor, DELIVERABLES[delId].weeks * 7);
+    const end = ov ? parseDate(ov.endDate) : addDays(cursor, DELIVERABLES[delId].weeks * 7);
     cursor = end;
     if (TODAY <= end) return { del: DELIVERABLES[delId], delId };
   }
@@ -767,26 +776,32 @@ function renderProjects() {
   }
 
   EXISTING.forEach(proj => {
-    const { del, delId } = getCurrentDeliverable(proj);
+    const currDel = getCurrentDeliverable(proj);
+    const del     = currDel ? currDel.del : null;
+    const delId   = currDel ? currDel.delId : null;
     const kickoff = parseDate(proj.kickoff);
     const endDate = getProjEnd(proj);
 
     // Team on current deliverable
-    const memberIds = (proj.team && proj.team[delId]) || [];
+    const memberIds = (delId && proj.team && proj.team[delId]) || [];
     const avsHtml = memberIds.map(tid => {
       const m = TEAM_MEMBERS.find(t => t.id === tid);
       return m ? `<span class="av" style="background:${m.color};color:#fff;" title="${m.name}">${m.initials[0]}</span>` : '';
     }).join('');
+
+    const stageHtml = del
+      ? `<span class="sp" style="background:${del.bg};color:${del.color};"><span class="dot" style="background:${del.color};"></span>${del.name}</span>`
+      : `<span style="font-size:11px;color:var(--t3);">No deliverables</span>`;
 
     const row = document.createElement('div');
     row.className = 'tr';
     if (proj.completed) row.style.opacity = '0.45';
     row.innerHTML = `
       <div class="cc">${proj.completed ? '<span style="color:var(--accent);margin-right:4px;">✓</span>' : ''}${proj.name}</div>
-      <div><span class="sp" style="background:${del.bg};color:${del.color};"><span class="dot" style="background:${del.color};"></span>${del.name}</span></div>
+      <div>${stageHtml}</div>
       <div class="avs">${avsHtml || '<span style="font-size:11px;color:var(--t3);">—</span>'}</div>
       <div class="ec">${fmtShort(kickoff)}</div>
-      <div class="ec">${fmtShort(endDate)}</div>`;
+      <div class="ec">${proj.deliverables && proj.deliverables.length ? fmtShort(endDate) : '—'}</div>`;
     row.addEventListener('click', () => openClientPanel(proj));
     tbody.appendChild(row);
   });
@@ -797,17 +812,20 @@ let clientPanelCtx = null;
 
 function openClientPanel(proj) {
   clientPanelCtx = proj;
-  const { del } = getCurrentDeliverable(proj);
+  const currDel = getCurrentDeliverable(proj);
   const kickoff = parseDate(proj.kickoff);
   const endDate = getProjEnd(proj);
   const fmt     = d => d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
 
   document.getElementById('cp-name').textContent  = proj.name;
-  document.getElementById('cp-sub').textContent   = `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
-  document.getElementById('cp-stage').innerHTML   = `<span style="color:${del.color};">${del.name}</span>`;
+  document.getElementById('cp-sub').textContent   = currDel
+    ? `Current: ${currDel.del.name}`
+    : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
   document.getElementById('cp-start').textContent = fmt(kickoff);
-  document.getElementById('cp-end').textContent   = fmt(endDate);
+  document.getElementById('cp-end').textContent   = proj.deliverables && proj.deliverables.length ? fmt(endDate) : '—';
   document.getElementById('cp-notes').value       = proj.notes || '';
+
+  renderCpDelList();
 
   // Proposal
   document.getElementById('cp-prop-url').value = proj.proposal.url || '';
@@ -873,6 +891,78 @@ function cpRenderContStatus(status) {
   const [cls, label] = map[status] || map.pending;
   badge.className = 'doc-status ' + cls;
   badge.textContent = label;
+}
+
+function renderCpDelList() {
+  const proj = clientPanelCtx;
+  const list = document.getElementById('cp-del-list');
+  const sel  = document.getElementById('cp-del-select');
+  list.innerHTML = '';
+
+  (proj.deliverables || []).forEach(delId => {
+    const d = DELIVERABLES[delId];
+    if (!d) return;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
+    row.innerHTML = `
+      <span style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0;"></span>
+      <span style="flex:1;font-size:12px;font-weight:500;">${d.name}</span>
+      <span style="font-size:10px;color:var(--t3);">${d.weeks}w</span>
+      <button onclick="cpRemoveDel('${delId}')" style="background:none;border:none;cursor:pointer;color:var(--t3);font-size:14px;padding:0 4px;line-height:1;border-radius:3px;" title="Remove" onmouseenter="this.style.color='#F87171'" onmouseleave="this.style.color='var(--t3)'">✕</button>`;
+    list.appendChild(row);
+  });
+
+  if (!proj.deliverables || !proj.deliverables.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:4px 0 8px;">No deliverables yet.</div>';
+  }
+
+  const added = new Set(proj.deliverables || []);
+  sel.innerHTML = '';
+  let available = 0;
+  Object.entries(DELIVERABLES).forEach(([id, d]) => {
+    if (added.has(id)) return;
+    available++;
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = d.name;
+    sel.appendChild(opt);
+  });
+  sel.parentElement.style.display = available === 0 ? 'none' : '';
+}
+
+function cpAddDel() {
+  const proj  = clientPanelCtx;
+  const sel   = document.getElementById('cp-del-select');
+  const delId = sel.value;
+  if (!delId || !DELIVERABLES[delId]) return;
+  if (!proj.deliverables) proj.deliverables = [];
+  if (proj.deliverables.includes(delId)) return;
+  proj.deliverables.push(delId);
+  saveData();
+  renderCpDelList();
+  const endDate = getProjEnd(proj);
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  document.getElementById('cp-end').textContent = fmt(endDate);
+  document.getElementById('cp-sub').textContent = `Current: ${getCurrentDeliverable(proj).del.name}`;
+  renderProjects();
+}
+
+function cpRemoveDel(delId) {
+  const proj = clientPanelCtx;
+  proj.deliverables = (proj.deliverables || []).filter(id => id !== delId);
+  if (proj.team)          delete proj.team[delId];
+  if (proj.overrides)     delete proj.overrides[delId];
+  if (proj.completedDels) delete proj.completedDels[delId];
+  saveData();
+  renderCpDelList();
+  const endDate = getProjEnd(proj);
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const currDel = getCurrentDeliverable(proj);
+  document.getElementById('cp-end').textContent = proj.deliverables.length ? fmt(endDate) : '—';
+  document.getElementById('cp-sub').textContent = currDel
+    ? `Current: ${currDel.del.name}`
+    : `Kickoff ${parseDate(proj.kickoff).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
+  renderProjects();
 }
 
 // ── Render timeline ──
@@ -1717,7 +1807,7 @@ function createProject() {
   const name = document.getElementById('client-name').value.trim();
   const kickoff = document.getElementById('kickoff-date').value;
   const dels = getActiveDels();
-  if (!name || !dels.length) { alert('Please enter a client name and select deliverables.'); return; }
+  if (!name) { alert('Please enter a client name.'); return; }
 
   const newProj = { name, kickoff, deliverables: dels,
     team: JSON.parse(JSON.stringify(assignedTeam)),
