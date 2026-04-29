@@ -104,6 +104,7 @@ input,select,button{font-family:inherit;font-size:inherit;}
 .tl-bars-scroll::-webkit-scrollbar{height:4px;}
 .tl-bars-scroll::-webkit-scrollbar-track{background:#111;}
 .tl-bars-scroll::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.6;cursor:pointer;}
 .tl-months-bar{height:48px;position:relative;border-bottom:1px solid var(--border);}
 .tl-bar-row{height:44px;position:relative;border-bottom:1px solid var(--border);}
 .tl-bar-row:last-child{border-bottom:none;}
@@ -468,7 +469,7 @@ select.inp{cursor:pointer;}
     <!-- Stats -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-bottom:1px solid var(--border);">
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Kickoff</div><input type="date" id="pp-kickoff-input" onchange="ppUpdateKickoff(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
-      <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Est. End</div><div id="pp-end" style="font-size:12px;font-weight:500;"></div></div>
+      <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Est. End</div><input type="date" id="pp-end-input" onchange="ppUpdateEndDate(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Deliverables</div><div id="pp-value" style="font-size:12px;font-weight:500;"></div></div>
       <div style="background:var(--surface);padding:14px 16px;"><div class="label" style="margin-bottom:4px;">Progress</div><div id="pp-progress-label" style="font-size:12px;font-weight:500;"></div></div>
     </div>
@@ -514,7 +515,7 @@ select.inp{cursor:pointer;}
     <!-- Dates strip -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><input type="date" id="cp-kickoff-input" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
-      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><div id="cp-end" style="font-size:12px;font-weight:500;"></div></div>
+      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><input type="date" id="cp-end-input" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
     </div>
 
     <!-- Deliverables -->
@@ -705,6 +706,7 @@ function updateRangeLabel() {
 
 // ── Projects ──
 let EXISTING = [];
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 // ── Sync status indicator ──
 let _syncTimer = null;
@@ -715,8 +717,9 @@ function setSyncStatus(status) {
   el.style.opacity = '1';
   if (status === 'syncing') { el.textContent = '↻ Syncing'; el.style.color = 'var(--t3)'; }
   else if (status === 'ok') {
-    el.textContent = '● Synced'; el.style.color = '#34D399';
-    _syncTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+    el.textContent = IS_LOCAL ? '⬡ Local' : '● Synced';
+    el.style.color = IS_LOCAL ? 'var(--t3)' : '#34D399';
+    _syncTimer = setTimeout(() => { el.style.opacity = '0'; }, IS_LOCAL ? 3000 : 2000);
   } else {
     el.textContent = '⚠ Offline'; el.style.color = '#F87171';
   }
@@ -741,6 +744,8 @@ async function saveData() {
     localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
     localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
   } catch(e) {}
+  // Localhost is read-only from Neon's perspective — changes stay local
+  if (IS_LOCAL) { setSyncStatus('ok'); return; }
   setSyncStatus('syncing');
   try {
     const res = await fetch('/api/data', {
@@ -778,8 +783,8 @@ async function loadData() {
     const localHasData   = localProjects.length  > 0 || localTeam.length  > 0;
     const alreadySynced  = !!localStorage.getItem('hex-pm-neon-synced');
 
-    if (!neonHasData && localHasData && !alreadySynced) {
-      // One-time migration: push local data up to Neon
+    if (!IS_LOCAL && !neonHasData && localHasData && !alreadySynced) {
+      // One-time migration (production only): push local data up to Neon
       const r = await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -792,14 +797,14 @@ async function loadData() {
         setSyncStatus('error');
       }
     } else {
-      // Neon is source of truth
+      // Neon is source of truth (on localhost: always reset to production state)
       EXISTING     = remoteProjects;
       TEAM_MEMBERS = remoteTeam;
       normalizeProjects();
       try {
         localStorage.setItem('hex-pm-v1-projects', JSON.stringify(EXISTING));
         localStorage.setItem('hex-pm-v1-team',     JSON.stringify(TEAM_MEMBERS));
-        localStorage.setItem('hex-pm-neon-synced', '1');
+        if (!IS_LOCAL) localStorage.setItem('hex-pm-neon-synced', '1');
       } catch(e) {}
       setSyncStatus('ok');
     }
@@ -864,13 +869,22 @@ function freezeDeliverablePositions(proj) {
   });
 }
 
+function ppUpdateEndDate(val) {
+  if (!projPanelCtx || !val || !projPanelCtx.deliverables || !projPanelCtx.deliverables.length) return;
+  freezeDeliverablePositions(projPanelCtx);
+  const lastId = projPanelCtx.deliverables[projPanelCtx.deliverables.length - 1];
+  projPanelCtx.overrides[lastId].endDate = val;
+  saveData();
+  renderTimeline();
+}
+
 function ppUpdateKickoff(val) {
   if (!projPanelCtx || !val) return;
   freezeDeliverablePositions(projPanelCtx);
   projPanelCtx.kickoff = val;
   const endDate = getProjEnd(projPanelCtx);
-  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-  document.getElementById('pp-end').textContent = projPanelCtx.deliverables && projPanelCtx.deliverables.length ? fmt(endDate) : '—';
+  const endInput = document.getElementById('pp-end-input');
+  if (endInput) endInput.value = projPanelCtx.deliverables && projPanelCtx.deliverables.length ? dateToStr(endDate) : '';
   saveData();
   renderTimeline();
 }
@@ -965,7 +979,7 @@ function openClientPanel(proj) {
     ? `Current: ${currDel.del.name}`
     : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
   document.getElementById('cp-kickoff-input').value = dateToStr(kickoff);
-  document.getElementById('cp-end').textContent   = proj.deliverables && proj.deliverables.length ? fmt(endDate) : '—';
+  document.getElementById('cp-end-input').value     = proj.deliverables && proj.deliverables.length ? dateToStr(endDate) : '';
   document.getElementById('cp-notes').value       = proj.notes || '';
 
   renderCpDelList();
@@ -998,6 +1012,12 @@ function saveClientPanel() {
   if (newKickoff && newKickoff !== clientPanelCtx.kickoff) {
     freezeDeliverablePositions(clientPanelCtx);
     clientPanelCtx.kickoff = newKickoff;
+  }
+  const newEnd = document.getElementById('cp-end-input').value;
+  if (newEnd && clientPanelCtx.deliverables && clientPanelCtx.deliverables.length) {
+    freezeDeliverablePositions(clientPanelCtx);
+    const lastId = clientPanelCtx.deliverables[clientPanelCtx.deliverables.length - 1];
+    clientPanelCtx.overrides[lastId].endDate = newEnd;
   }
   clientPanelCtx.notes            = document.getElementById('cp-notes').value;
   clientPanelCtx.proposal.url     = document.getElementById('cp-prop-url').value.trim();
@@ -1118,7 +1138,7 @@ function _cpRefreshDates() {
   const proj = clientPanelCtx;
   const endDate = getProjEnd(proj);
   const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  document.getElementById('cp-end').textContent = proj.deliverables.length ? fmt(endDate) : '—';
+  document.getElementById('cp-end-input').value = proj.deliverables.length ? dateToStr(endDate) : '';
   const curr = getCurrentDeliverable(proj);
   document.getElementById('cp-sub').textContent = curr
     ? `Current: ${curr.del.name}`
@@ -1511,7 +1531,7 @@ function openProjPanel(proj) {
   const endDate = getProjEnd(proj);
   const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   document.getElementById('pp-kickoff-input').value = dateToStr(kickoff);
-  document.getElementById('pp-end').textContent     = (proj.deliverables && proj.deliverables.length) ? fmt(endDate) : '—';
+  document.getElementById('pp-end-input').value     = (proj.deliverables && proj.deliverables.length) ? dateToStr(endDate) : '';
 
   // Sub line
   const daysIn = Math.round((TODAY - kickoff) / 86400000);
@@ -1632,8 +1652,7 @@ function _ppRefreshStats() {
   document.getElementById('pp-progress-label').textContent = `${done} / ${total} done`;
   document.getElementById('pp-progress-bar').style.width   = (total ? Math.round(done/total*100) : 0) + '%';
   const endDate = getProjEnd(proj);
-  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  document.getElementById('pp-end').textContent = total ? fmt(endDate) : '—';
+  document.getElementById('pp-end-input').value = total ? dateToStr(endDate) : '';
 }
 
 function closeProjPanel() {
