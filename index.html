@@ -57,11 +57,13 @@ input,select,button{font-family:inherit;font-size:inherit;}
 
 /* ── Projects Table ── */
 .tbl{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
-.th{display:grid;grid-template-columns:210px 1fr 90px 105px 105px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:10px;color:var(--t3);font-weight:500;text-transform:uppercase;letter-spacing:.06em;}
-.tr{display:grid;grid-template-columns:210px 1fr 90px 105px 105px;padding:12px 14px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;transition:background .1s;}
+.th{display:grid;grid-template-columns:180px 130px 1fr 48px 88px 95px 95px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:10px;color:var(--t3);font-weight:500;text-transform:uppercase;letter-spacing:.06em;}
+.tr{display:grid;grid-template-columns:180px 130px 1fr 48px 88px 95px 95px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;transition:background .1s;}
 .tr:last-child{border-bottom:none;}
 .tr:hover{background:var(--s2);}
-.cc{display:flex;align-items:center;gap:6px;font-weight:500;}
+.cc{display:flex;align-items:center;gap:6px;font-weight:500;min-width:0;}
+.cc-update{font-size:11px;color:var(--t2);line-height:1.5;min-width:0;}
+.cc-days{font-size:11px;color:var(--t2);}
 .urg{width:6px;height:6px;border-radius:50%;background:#F87171;flex-shrink:0;}
 .dc{font-size:12px;}
 .dn{font-weight:600;}
@@ -288,7 +290,7 @@ select.inp{cursor:pointer;}
     <!-- PROJECTS VIEW -->
     <div id="v-projects" class="view active">
       <div class="tbl">
-        <div class="th"><div>Client</div><div>Current Stage</div><div>Team</div><div>Start Date</div><div>Est. End</div></div>
+        <div class="th"><div>Client</div><div>Current Stage</div><div>Latest Update</div><div>Days</div><div>Team</div><div>Start Date</div><div>Est. End</div></div>
         <div id="proj-tbl-body"></div>
       </div>
     </div>
@@ -493,10 +495,14 @@ select.inp{cursor:pointer;}
       <div id="pp-del-add" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
     </div>
 
-    <!-- Notes -->
-    <div style="padding:0 20px 16px;">
-      <div class="label" style="margin-bottom:8px;">Notes</div>
-      <textarea id="pp-notes" class="inp" style="resize:none;height:80px;font-size:12px;line-height:1.5;" placeholder="Add notes about this client..."></textarea>
+    <!-- Comments -->
+    <div style="padding:0 20px 16px;border-top:1px solid var(--border);padding-top:16px;">
+      <div class="label" style="margin-bottom:10px;">Comments</div>
+      <div id="pp-comments-list" style="display:flex;flex-direction:column;gap:2px;margin-bottom:10px;max-height:220px;overflow-y:auto;"></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <textarea id="pp-comment-input" class="inp" style="width:100%;resize:none;height:72px;font-size:12px;line-height:1.5;box-sizing:border-box;" placeholder="Add a comment… (Ctrl+Enter to post)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){ppAddComment();event.preventDefault();}"></textarea>
+        <button class="btn-create" onclick="ppAddComment()" style="align-self:flex-end;padding:7px 16px;font-size:12px;">Post</button>
+      </div>
     </div>
   </div>
   <div class="panel-footer">
@@ -559,9 +565,15 @@ select.inp{cursor:pointer;}
       </div>
     </div>
 
-    <!-- Notes -->
-    <div class="label" style="margin-bottom:8px;">Notes</div>
-    <textarea class="inp" id="cp-notes" style="resize:none;height:80px;font-size:12px;line-height:1.5;" placeholder="Client notes, POC, follow-ups..."></textarea>
+    <!-- Comments -->
+    <div style="border-top:1px solid var(--border);padding-top:20px;margin-top:4px;">
+      <div class="label" style="margin-bottom:10px;">Comments</div>
+      <div id="cp-comments-list" style="display:flex;flex-direction:column;gap:2px;margin-bottom:10px;max-height:240px;overflow-y:auto;"></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <textarea id="cp-comment-input" class="inp" style="width:100%;resize:none;height:72px;font-size:12px;line-height:1.5;box-sizing:border-box;" placeholder="Add a comment… (Ctrl+Enter to post)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){cpAddComment();event.preventDefault();}"></textarea>
+        <button class="btn-create" onclick="cpAddComment()" style="align-self:flex-end;padding:7px 16px;font-size:12px;">Post</button>
+      </div>
+    </div>
   </div>
   <div class="panel-footer">
     <button class="btn-cancel" onclick="closeClientPanel()">Close</button>
@@ -740,6 +752,7 @@ function normalizeProjects() {
     if (!proj.completedDels) proj.completedDels = {};
     if (!proj.overrides)     proj.overrides    = {};
     if (!proj.deliverables)  proj.deliverables  = [];
+    if (!proj.comments)      proj.comments      = [];
   });
 }
 
@@ -819,8 +832,82 @@ async function loadData() {
   }
 }
 
+// ── Comments ──
+function timeAgo(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7)  return `${days}d ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month:'short', day:'numeric' });
+}
+
+function renderProjComments() {
+  const proj = projPanelCtx;
+  const list = document.getElementById('pp-comments-list');
+  if (!list || !proj) return;
+  const comments = proj.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:2px 0 4px;">No comments yet.</div>';
+    return;
+  }
+  list.innerHTML = comments.map(c => `
+    <div style="padding:9px 11px;border-radius:7px;background:var(--s2);border:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">${timeAgo(c.ts)}</div>
+      <div style="font-size:12px;line-height:1.55;color:var(--t1);white-space:pre-wrap;">${c.text.replace(/</g,'&lt;')}</div>
+    </div>`).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function renderCpComments() {
+  const proj = clientPanelCtx;
+  const list = document.getElementById('cp-comments-list');
+  if (!list || !proj) return;
+  const comments = proj.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:2px 0 4px;">No comments yet.</div>';
+    return;
+  }
+  list.innerHTML = comments.map(c => `
+    <div style="padding:9px 11px;border-radius:7px;background:var(--s2);border:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">${timeAgo(c.ts)}</div>
+      <div style="font-size:12px;line-height:1.55;color:var(--t1);white-space:pre-wrap;">${c.text.replace(/</g,'&lt;')}</div>
+    </div>`).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function cpAddComment() {
+  const input = document.getElementById('cp-comment-input');
+  if (!input || !clientPanelCtx) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (!clientPanelCtx.comments) clientPanelCtx.comments = [];
+  clientPanelCtx.comments.push({ id: Date.now().toString(), text, ts: new Date().toISOString() });
+  input.value = '';
+  saveData();
+  renderCpComments();
+  renderProjects();
+}
+
+function ppAddComment() {
+  const input = document.getElementById('pp-comment-input');
+  if (!input || !projPanelCtx) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (!projPanelCtx.comments) projPanelCtx.comments = [];
+  projPanelCtx.comments.push({ id: Date.now().toString(), text, ts: new Date().toISOString() });
+  input.value = '';
+  saveData();
+  renderProjComments();
+  renderProjects();
+}
+
 // ── Show/hide completed filter ──
 let SHOW_COMPLETED = true;
+let _tlScrollReady = false;
 function toggleShowCompleted() {
   SHOW_COMPLETED = !SHOW_COMPLETED;
   const btn = document.getElementById('btn-filter-completed');
@@ -957,12 +1044,16 @@ function renderProjects() {
       ? `<span class="sp" style="background:${del.bg};color:${del.color};"><span class="dot" style="background:${del.color};"></span>${del.name}</span>`
       : `<span style="font-size:11px;color:var(--t3);">No deliverables</span>`;
 
+    const latestComment = proj.comments && proj.comments.length ? proj.comments[proj.comments.length - 1] : null;
+
     const row = document.createElement('div');
     row.className = 'tr';
     if (proj.completed) row.style.opacity = '0.45';
     row.innerHTML = `
-      <div class="cc">${proj.completed ? '<span style="color:var(--accent);margin-right:4px;">✓</span>' : ''}${proj.name}</div>
+      <div class="cc">${proj.completed ? '<span style="color:var(--accent);">✓</span>' : ''}${proj.name}</div>
       <div>${stageHtml}</div>
+      <div class="cc-update">${latestComment ? latestComment.text.replace(/</g,'&lt;') : '<span style="opacity:0.35;">—</span>'}</div>
+      <div class="cc-days">${latestComment ? (() => { const d = Math.floor((Date.now()-new Date(latestComment.ts).getTime())/86400000); return d===0?'today':d+'d'; })() : '<span style="opacity:0.35;">—</span>'}</div>
       <div class="avs">${avsHtml || '<span style="font-size:11px;color:var(--t3);">—</span>'}</div>
       <div class="ec">${fmtShort(kickoff)}</div>
       <div class="ec">${proj.deliverables && proj.deliverables.length ? fmtShort(endDate) : '—'}</div>`;
@@ -987,9 +1078,9 @@ function openClientPanel(proj) {
     : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
   document.getElementById('cp-kickoff-input').value = dateToStr(kickoff);
   document.getElementById('cp-end-input').value     = proj.deliverables && proj.deliverables.length ? dateToStr(endDate) : '';
-  document.getElementById('cp-notes').value       = proj.notes || '';
 
   renderCpDelList();
+  renderCpComments();
 
   // Proposal
   document.getElementById('cp-prop-url').value = proj.proposal.url || '';
@@ -1026,7 +1117,6 @@ function saveClientPanel() {
     const lastId = clientPanelCtx.deliverables[clientPanelCtx.deliverables.length - 1];
     clientPanelCtx.overrides[lastId].endDate = newEnd;
   }
-  clientPanelCtx.notes            = document.getElementById('cp-notes').value;
   clientPanelCtx.proposal.url     = document.getElementById('cp-prop-url').value.trim();
   clientPanelCtx.contract.url     = document.getElementById('cp-cont-url').value.trim();
   saveData();
@@ -1306,8 +1396,10 @@ function renderTimeline() {
     barsBody.appendChild(barRow);
   });
 
-  // Auto-scroll to TODAY (with ~1 week left context)
-  barsScroll.scrollLeft = Math.max(0, dateToPx(TODAY) - PX_PER_DAY * 7);
+  if (!_tlScrollReady) {
+    barsScroll.scrollLeft = Math.max(0, dateToPx(TODAY) - PX_PER_DAY * 7);
+    _tlScrollReady = true;
+  }
   updateRangeLabel();
   barsScroll.addEventListener('scroll', updateRangeLabel, { passive: true });
 
@@ -1562,7 +1654,8 @@ function openProjPanel(proj) {
   renderProjDelList();
 
   // Notes
-  document.getElementById('pp-notes').value = proj.notes || '';
+  // Comments
+  renderProjComments();
 
   // Complete button
   updateProjCompleteBtn();
@@ -1689,7 +1782,6 @@ function toggleProjComplete() {
   const savedLeft = scroll ? scroll.scrollLeft : 0;
 
   proj.completed = !proj.completed;
-  proj.notes     = document.getElementById('pp-notes').value;
 
   // If marking complete, complete all deliverables too
   if (proj.completed) {
