@@ -275,9 +275,14 @@ select.inp{cursor:pointer;}
 <main class="main">
   <div class="topbar">
     <div><h1 id="view-title">All Projects</h1><div class="topbar-meta" id="view-meta"></div></div>
-    <span id="sync-status" style="font-size:10px;color:var(--t3);transition:opacity .5s;opacity:0;margin-right:8px;"></span>
-    <button id="btn-filter-completed" onclick="toggleShowCompleted()" style="font-size:11px;padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:var(--s2);color:var(--t2);cursor:pointer;margin-right:8px;white-space:nowrap;">Hide Completed</button>
-    <button class="btn-new" id="btn-new-main" onclick="handleNewBtn()">+ New Project</button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span id="sync-status" style="font-size:10px;color:var(--t3);transition:opacity .5s;opacity:0;"></span>
+      <button id="btn-filter-completed" onclick="toggleShowCompleted()" title="Hide completed projects" style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:var(--t3);cursor:pointer;border-radius:6px;transition:color .15s,background .15s;flex-shrink:0;" onmouseenter="this.style.background='var(--s2)'" onmouseleave="this.style.background='none'">
+        <svg id="icon-eye-open" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg id="icon-eye-closed" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+      <button class="btn-new" id="btn-new-main" onclick="handleNewBtn()">+ New Project</button>
+    </div>
   </div>
   <div class="content">
     <!-- PROJECTS VIEW -->
@@ -819,10 +824,12 @@ let SHOW_COMPLETED = true;
 function toggleShowCompleted() {
   SHOW_COMPLETED = !SHOW_COMPLETED;
   const btn = document.getElementById('btn-filter-completed');
-  btn.textContent = SHOW_COMPLETED ? 'Hide Completed' : 'Show Completed';
-  btn.style.background = SHOW_COMPLETED ? 'var(--s2)' : 'var(--accent)';
-  btn.style.color = SHOW_COMPLETED ? 'var(--t2)' : '#000';
-  btn.style.borderColor = SHOW_COMPLETED ? 'var(--border)' : 'var(--accent)';
+  if (btn) {
+    btn.style.color = SHOW_COMPLETED ? 'var(--t3)' : 'var(--accent)';
+    btn.title = SHOW_COMPLETED ? 'Hide completed projects' : 'Show completed projects';
+    document.getElementById('icon-eye-open').style.display  = SHOW_COMPLETED ? '' : 'none';
+    document.getElementById('icon-eye-closed').style.display = SHOW_COMPLETED ? 'none' : '';
+  }
   renderProjects();
   renderTimeline();
 }
