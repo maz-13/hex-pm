@@ -1967,6 +1967,7 @@ function renderTeamSection(containerId, members) {
     EXISTING.forEach(proj => {
       if (proj.completed) return;
       proj.deliverables.forEach(delId => {
+        if (proj.completedDels && proj.completedDels[delId]) return;
         const teamIds = proj.team && proj.team[delId] ? proj.team[delId] : [];
         if (teamIds.includes(m.id)) actives.push({ projName: proj.name, delId });
       });
