@@ -290,7 +290,7 @@ select.inp{cursor:pointer;}
     <!-- PROJECTS VIEW -->
     <div id="v-projects" class="view active">
       <div class="tbl">
-        <div class="th"><div>Client</div><div>Current Stage</div><div>Latest Update</div><div>Days</div><div>Team</div><div>Start Date</div><div>Est. End</div></div>
+        <div class="th"><div>Client</div><div>Current Stage</div><div>Latest Update</div><div>Updated</div><div>Team</div><div>Start Date</div><div>Est. End</div></div>
         <div id="proj-tbl-body"></div>
       </div>
     </div>
@@ -1052,7 +1052,7 @@ function renderProjects() {
       <div class="cc">${proj.completed ? '<span style="color:var(--accent);">✓</span>' : ''}${proj.name}</div>
       <div>${stageHtml}</div>
       <div class="cc-update">${latestComment ? latestComment.text.replace(/</g,'&lt;') : '<span style="opacity:0.35;">—</span>'}</div>
-      <div class="cc-days">${latestComment ? (() => { const d = Math.floor((Date.now()-new Date(latestComment.ts).getTime())/86400000); return d===0?'today':d+'d'; })() : '<span style="opacity:0.35;">—</span>'}</div>
+      <div class="cc-days">${latestComment ? timeAgo(latestComment.ts) : '<span style="opacity:0.35;">—</span>'}</div>
       <div class="avs">${avsHtml || '<span style="font-size:11px;color:var(--t3);">—</span>'}</div>
       <div class="ec">${fmtShort(kickoff)}</div>
       <div class="ec">${proj.deliverables && proj.deliverables.length ? fmtShort(endDate) : '—'}</div>`;
