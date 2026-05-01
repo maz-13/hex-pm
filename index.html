@@ -525,8 +525,8 @@ select.inp{cursor:pointer;}
   <div class="panel-body">
     <!-- Dates strip -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
-      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><input type="date" id="cp-kickoff-input" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
-      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><input type="date" id="cp-end-input" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
+      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><input type="date" id="cp-kickoff-input" onchange="cpKickoffChanged(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
+      <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><input type="date" id="cp-end-input" onchange="cpEndChanged(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
     </div>
 
     <!-- Deliverables -->
@@ -542,7 +542,7 @@ select.inp{cursor:pointer;}
         <span id="cp-prop-status" class="doc-status pending">Not uploaded</span>
       </div>
       <div class="doc-url-row">
-        <input class="inp" type="url" id="cp-prop-url" placeholder="Paste proposal link (Notion, Google Doc...)" oninput="cpUrlChanged('prop')">
+        <input class="inp" type="url" id="cp-prop-url" placeholder="Paste proposal link (Notion, Google Doc...)" oninput="cpUrlChanged('prop')" onchange="cpUrlSave('prop')">
         <button class="btn-open" id="cp-prop-open" onclick="cpOpenLink('prop')" disabled>Open ↗</button>
       </div>
     </div>
@@ -560,7 +560,7 @@ select.inp{cursor:pointer;}
         <button class="pkg-tab active" id="cp-cont-signed" onclick="setCpContStatus('signed',this)" style="flex:1;font-size:11px;">Signed</button>
       </div>
       <div class="doc-url-row">
-        <input class="inp" type="url" id="cp-cont-url" placeholder="Paste contract link..." oninput="cpUrlChanged('cont')">
+        <input class="inp" type="url" id="cp-cont-url" placeholder="Paste contract link..." oninput="cpUrlChanged('cont')" onchange="cpUrlSave('cont')">
         <button class="btn-open" id="cp-cont-open" onclick="cpOpenLink('cont')" disabled>Open ↗</button>
       </div>
     </div>
@@ -578,7 +578,6 @@ select.inp{cursor:pointer;}
   <div class="panel-footer">
     <button class="btn-cancel" onclick="closeClientPanel()">Close</button>
     <button class="btn-cancel" onclick="deleteProject(clientPanelCtx,'client')" style="color:#ff6b6b;border-color:#ff6b6b33;">Delete</button>
-    <button class="btn-create" onclick="saveClientPanel()">Save</button>
   </div>
 </div>
 
@@ -1104,36 +1103,41 @@ function closeClientPanel() {
   document.getElementById('client-overlay').classList.remove('open');
 }
 
-function saveClientPanel() {
-  if (!clientPanelCtx) return;
-  const newKickoff = document.getElementById('cp-kickoff-input').value;
-  if (newKickoff && newKickoff !== clientPanelCtx.kickoff) {
-    freezeDeliverablePositions(clientPanelCtx);
-    clientPanelCtx.kickoff = newKickoff;
-  }
-  const newEnd = document.getElementById('cp-end-input').value;
-  if (newEnd && clientPanelCtx.deliverables && clientPanelCtx.deliverables.length) {
-    freezeDeliverablePositions(clientPanelCtx);
-    const lastId = clientPanelCtx.deliverables[clientPanelCtx.deliverables.length - 1];
-    clientPanelCtx.overrides[lastId].endDate = newEnd;
-  }
-  clientPanelCtx.proposal.url     = document.getElementById('cp-prop-url').value.trim();
-  clientPanelCtx.contract.url     = document.getElementById('cp-cont-url').value.trim();
+function cpKickoffChanged(val) {
+  if (!clientPanelCtx || !val || val === clientPanelCtx.kickoff) return;
+  freezeDeliverablePositions(clientPanelCtx);
+  clientPanelCtx.kickoff = val;
   saveData();
-  closeClientPanel();
   renderProjects();
+  renderTimeline();
+}
+
+function cpEndChanged(val) {
+  if (!clientPanelCtx || !val || !clientPanelCtx.deliverables || !clientPanelCtx.deliverables.length) return;
+  freezeDeliverablePositions(clientPanelCtx);
+  const lastId = clientPanelCtx.deliverables[clientPanelCtx.deliverables.length - 1];
+  clientPanelCtx.overrides[lastId].endDate = val;
+  saveData();
+  renderTimeline();
 }
 
 function cpUrlChanged(which) {
   const url = document.getElementById('cp-' + which + '-url').value.trim();
   const btn = document.getElementById('cp-' + which + '-open');
   btn.disabled = !url;
-  // Auto-set proposal status when URL is added
   if (which === 'prop' && clientPanelCtx) {
     const badge = document.getElementById('cp-prop-status');
     if (url) { badge.className = 'doc-status signed'; badge.textContent = 'Uploaded'; }
     else      { badge.className = 'doc-status pending'; badge.textContent = 'Not uploaded'; }
   }
+}
+
+function cpUrlSave(which) {
+  if (!clientPanelCtx) return;
+  const url = document.getElementById('cp-' + which + '-url').value.trim();
+  if (which === 'prop') clientPanelCtx.proposal.url = url;
+  else clientPanelCtx.contract.url = url;
+  saveData();
 }
 
 function cpOpenLink(which) {
@@ -1148,6 +1152,7 @@ function setCpContStatus(status, btn) {
     document.getElementById('cp-cont-' + s).classList.toggle('active', s === status);
   });
   cpRenderContStatus(status);
+  saveData();
 }
 
 function cpRenderContStatus(status) {
