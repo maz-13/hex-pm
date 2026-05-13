@@ -905,7 +905,7 @@ function ppAddComment() {
 }
 
 // ── Show/hide completed filter ──
-let SHOW_COMPLETED = true;
+let SHOW_COMPLETED = false;
 let _tlScrollReady = false;
 function toggleShowCompleted() {
   SHOW_COMPLETED = !SHOW_COMPLETED;
@@ -2162,6 +2162,13 @@ function createProject() {
 (async () => {
   document.getElementById('sidebar-date').textContent =
     TODAY.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+  // Sync filter button to default SHOW_COMPLETED state
+  const _fb = document.getElementById('btn-filter-completed');
+  if (_fb) { _fb.style.color = SHOW_COMPLETED ? 'var(--t3)' : 'var(--accent)'; _fb.title = SHOW_COMPLETED ? 'Hide completed projects' : 'Show completed projects'; }
+  const _eo = document.getElementById('icon-eye-open');
+  const _ec = document.getElementById('icon-eye-closed');
+  if (_eo) _eo.style.display = SHOW_COMPLETED ? '' : 'none';
+  if (_ec) _ec.style.display = SHOW_COMPLETED ? 'none' : '';
   // Render immediately from localStorage (instant UI)
   try {
     const p = localStorage.getItem('hex-pm-v1-projects');
