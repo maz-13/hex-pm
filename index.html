@@ -446,6 +446,12 @@ select.inp{cursor:pointer;}
     <div class="label" style="margin-bottom:10px;">Assigned Team</div>
     <div id="dp-team-list" style="display:flex;flex-direction:column;gap:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;"></div>
 
+    <!-- Past contributors -->
+    <div id="dp-past-contributors" style="display:none;margin-bottom:20px;">
+      <div class="label" style="margin-bottom:8px;">Past Contributors</div>
+      <div id="dp-past-rows" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+    </div>
+
     <!-- Add member -->
     <div class="label" style="margin-bottom:8px;">Add Team Member</div>
     <div id="dp-member-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
@@ -581,14 +587,34 @@ select.inp{cursor:pointer;}
   </div>
 </div>
 
-<!-- Member add/edit panel -->
+<!-- Member panel -->
 <div class="panel-overlay" id="member-overlay" onclick="closeMemberPanel()"></div>
 <div class="panel" id="member-panel">
   <div class="panel-head">
-    <h2 id="mp-title">New Member</h2>
-    <button class="btn-close" onclick="closeMemberPanel()">✕</button>
+    <div>
+      <h2 id="mp-title" style="font-size:15px;font-weight:700;"></h2>
+      <div id="mp-subtitle" style="font-size:11px;color:var(--t3);margin-top:2px;"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button id="mp-edit-btn" onclick="enterMpEdit()" style="padding:6px 12px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--t2);font-size:11px;font-weight:500;cursor:pointer;display:none;">Edit</button>
+      <button class="btn-close" onclick="closeMemberPanel()">✕</button>
+    </div>
   </div>
-  <div class="panel-body">
+
+  <!-- VIEW mode -->
+  <div id="mp-view" class="panel-body">
+    <!-- Active deliverables -->
+    <div class="label" style="margin-bottom:8px;">Active Deliverables</div>
+    <div id="mp-view-actives" style="display:flex;flex-direction:column;gap:2px;margin-bottom:20px;"></div>
+    <!-- Past contributions -->
+    <div id="mp-past-section" style="display:none;">
+      <div class="label" style="margin-bottom:8px;">Past Contributions</div>
+      <div id="mp-past-list" style="display:flex;flex-direction:column;gap:2px;"></div>
+    </div>
+  </div>
+
+  <!-- EDIT mode -->
+  <div id="mp-edit-form" class="panel-body" style="display:none;">
     <!-- Avatar preview + color -->
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
       <div id="mp-av-preview" style="width:52px;height:52px;border-radius:50%;background:#D97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;letter-spacing:-.5px;"></div>
@@ -597,7 +623,7 @@ select.inp{cursor:pointer;}
         <div id="mp-colors" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
       </div>
     </div>
-    <!-- Name + initials side by side -->
+    <!-- Name + initials -->
     <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:16px;">
       <div>
         <div class="label" style="margin-bottom:6px;">Full Name</div>
@@ -641,9 +667,15 @@ select.inp{cursor:pointer;}
       <textarea class="inp" id="mp-notes" style="resize:none;height:72px;font-size:12px;line-height:1.5;" placeholder="Availability, contact info, specialties..."></textarea>
     </div>
   </div>
-  <div class="panel-footer">
-    <button id="mp-delete-btn" onclick="deleteMember()" style="flex:1;padding:9px;background:none;border:1px solid #3D1515;border-radius:7px;color:#F87171;cursor:pointer;font-size:12px;font-weight:500;display:none;">Remove</button>
-    <button class="btn-cancel" onclick="closeMemberPanel()">Cancel</button>
+
+  <!-- VIEW footer -->
+  <div id="mp-view-footer" class="panel-footer" style="display:none;">
+    <button class="btn-cancel" onclick="closeMemberPanel()">Close</button>
+  </div>
+  <!-- EDIT footer -->
+  <div id="mp-edit-footer" class="panel-footer" style="display:none;">
+    <button id="mp-delete-btn" onclick="deleteMember()" style="flex:1;padding:9px;background:none;border:1px solid #3D1515;border-radius:7px;color:#F87171;cursor:pointer;font-size:12px;font-weight:500;">Remove</button>
+    <button class="btn-cancel" onclick="exitMpEdit()">Cancel</button>
     <button class="btn-create" onclick="saveMemberPanel()">Save</button>
   </div>
 </div>
@@ -722,7 +754,8 @@ function updateRangeLabel() {
 
 // ── Projects ──
 let EXISTING = [];
-const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// IS_LOCAL: true only when opened as a raw file (no server). When running via Next.js (dev or prod), the API is always available.
+const IS_LOCAL = window.location.protocol === 'file:';
 
 // ── Sync status indicator ──
 let _syncTimer = null;
@@ -748,6 +781,7 @@ function normalizeProjects() {
     if (!proj.contract)      proj.contract     = { status:'pending', url:'' };
     if (!proj.notes)         proj.notes        = '';
     if (!proj.team)          proj.team         = {};
+    if (!proj.teamLog)       proj.teamLog      = {};
     if (!proj.completedDels) proj.completedDels = {};
     if (!proj.overrides)     proj.overrides    = {};
     if (!proj.deliverables)  proj.deliverables  = [];
@@ -1594,13 +1628,67 @@ function renderDelTeam() {
   if (TEAM_MEMBERS.every(m => assigned.includes(m.id))) {
     grid.innerHTML = '<div style="font-size:11px;color:var(--t3);">All team members assigned</div>';
   }
+
+  // Past contributors (removed but have a log record)
+  const pastRecords = (proj.teamLog && proj.teamLog[delId])
+    ? proj.teamLog[delId].filter(r => r.removedAt && !assigned.includes(r.memberId))
+    : [];
+  const pastEl = document.getElementById('dp-past-contributors');
+  if (pastRecords.length) {
+    pastEl.style.display = '';
+    const rows = document.getElementById('dp-past-rows');
+    rows.innerHTML = '';
+    pastRecords.forEach(r => {
+      const m = TEAM_MEMBERS.find(t => t.id === r.memberId);
+      if (!m) return;
+      const fmtD = s => { const d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);opacity:.65;';
+      row.innerHTML = `
+        <div style="width:24px;height:24px;border-radius:50%;background:${m.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;">${m.initials}</div>
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:500;">${m.name}</div>
+          <div style="font-size:10px;color:var(--t3);">${fmtD(r.addedAt)} – ${fmtD(r.removedAt)}</div>
+        </div>
+        <button onclick="reAddToDel('${r.memberId}')" style="background:none;border:1px solid var(--border);cursor:pointer;color:var(--t3);font-size:10px;padding:3px 8px;border-radius:5px;line-height:1.4;" title="Re-add">Re-add</button>`;
+      rows.appendChild(row);
+    });
+    if (rows.lastChild) rows.lastChild.style.borderBottom = 'none';
+  } else {
+    pastEl.style.display = 'none';
+  }
+}
+
+function reAddToDel(memberId) {
+  const { proj, delId } = delPanelCtx;
+  if (!proj.team) proj.team = {};
+  if (!proj.team[delId]) proj.team[delId] = [];
+  if (!proj.team[delId].includes(memberId)) {
+    proj.team[delId].push(memberId);
+    if (!proj.teamLog) proj.teamLog = {};
+    if (!proj.teamLog[delId]) proj.teamLog[delId] = [];
+    proj.teamLog[delId].push({ memberId, addedAt: todayStr(), removedAt: null });
+  }
+  renderDelTeam();
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
 }
 
 function addToDel(memberId) {
   const { proj, delId } = delPanelCtx;
   if (!proj.team) proj.team = {};
   if (!proj.team[delId]) proj.team[delId] = [];
-  if (!proj.team[delId].includes(memberId)) proj.team[delId].push(memberId);
+  if (!proj.team[delId].includes(memberId)) {
+    proj.team[delId].push(memberId);
+    // Log contribution start
+    if (!proj.teamLog) proj.teamLog = {};
+    if (!proj.teamLog[delId]) proj.teamLog[delId] = [];
+    // Only open a new record if no open one exists for this member
+    const open = proj.teamLog[delId].find(r => r.memberId === memberId && !r.removedAt);
+    if (!open) proj.teamLog[delId].push({ memberId, addedAt: todayStr(), removedAt: null });
+  }
   renderDelTeam();
 }
 
@@ -1608,6 +1696,11 @@ function removeFromDel(memberId) {
   const { proj, delId } = delPanelCtx;
   if (proj.team && proj.team[delId]) {
     proj.team[delId] = proj.team[delId].filter(id => id !== memberId);
+  }
+  // Close the contribution record
+  if (proj.teamLog && proj.teamLog[delId]) {
+    const open = proj.teamLog[delId].find(r => r.memberId === memberId && !r.removedAt);
+    if (open) open.removedAt = todayStr();
   }
   renderDelTeam();
 }
@@ -2019,25 +2112,120 @@ let mpSkills        = [];
 function openMemberPanel(member) {
   memberPanelCtx = member;
   const isNew = !member;
-  document.getElementById('mp-title').textContent    = isNew ? 'New Member' : member.name;
-  document.getElementById('mp-name').value           = member ? member.name      : '';
-  document.getElementById('mp-initials').value       = member ? member.initials  : '';
-  document.getElementById('mp-role').value           = member ? (member.role||'')  : '';
-  document.getElementById('mp-rate').value           = member ? (member.rate||'')  : '';
-  document.getElementById('mp-notes').value          = member ? (member.notes||'') : '';
+
+  // Populate edit form fields (needed whether we show them now or later)
+  document.getElementById('mp-name').value     = member ? member.name       : '';
+  document.getElementById('mp-initials').value = member ? member.initials   : '';
+  document.getElementById('mp-role').value     = member ? (member.role||'') : '';
+  document.getElementById('mp-rate').value     = member ? (member.rate||'') : '';
+  document.getElementById('mp-notes').value    = member ? (member.notes||''): '';
   mpSelectedColor = member ? member.color : MEMBER_COLORS[0];
   mpSelectedType  = member ? (member.type || 'core') : 'core';
   mpSkills        = member ? [...(member.skills || [])] : [];
-
   document.querySelectorAll('#member-panel .pkg-tab').forEach(b => b.classList.remove('active'));
   document.getElementById(mpSelectedType === 'core' ? 'mp-type-core' : 'mp-type-contractor').classList.add('active');
-
   renderMpColors();
   renderSkillChips();
   updateAvPreview();
-  document.getElementById('mp-delete-btn').style.display = isNew ? 'none' : '';
+
+  if (isNew) {
+    // New member → go straight to edit mode
+    document.getElementById('mp-title').textContent    = 'New Member';
+    document.getElementById('mp-subtitle').textContent = '';
+    showMpMode('edit');
+  } else {
+    // Existing member → show view mode
+    document.getElementById('mp-title').textContent    = member.name;
+    document.getElementById('mp-subtitle').textContent = member.role || '';
+    renderMpView(member);
+    showMpMode('view');
+  }
+
   document.getElementById('member-panel').classList.add('open');
   document.getElementById('member-overlay').classList.add('open');
+}
+
+function showMpMode(mode) {
+  const isEdit = mode === 'edit';
+  document.getElementById('mp-view').style.display        = isEdit ? 'none' : '';
+  document.getElementById('mp-edit-form').style.display   = isEdit ? ''     : 'none';
+  document.getElementById('mp-view-footer').style.display = isEdit ? 'none' : '';
+  document.getElementById('mp-edit-footer').style.display = isEdit ? ''     : 'none';
+  document.getElementById('mp-edit-btn').style.display    = isEdit ? 'none' : '';
+  // Only show Edit button for existing members in view mode
+  if (!isEdit && memberPanelCtx) document.getElementById('mp-edit-btn').style.display = '';
+  // Only show delete button for existing members in edit mode
+  document.getElementById('mp-delete-btn').style.display = (isEdit && memberPanelCtx) ? '' : 'none';
+}
+
+function renderMpView(member) {
+  // Active deliverables
+  const activesEl = document.getElementById('mp-view-actives');
+  activesEl.innerHTML = '';
+  const actives = [];
+  EXISTING.forEach(proj => {
+    if (proj.completed) return;
+    proj.deliverables.forEach(delId => {
+      if (proj.completedDels && proj.completedDels[delId]) return;
+      const teamIds = proj.team && proj.team[delId] ? proj.team[delId] : [];
+      if (teamIds.includes(member.id)) actives.push({ projName: proj.name, delId });
+    });
+  });
+  if (actives.length) {
+    actives.forEach(a => {
+      const d = DELIVERABLES[a.delId];
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
+      row.innerHTML = `
+        <div style="flex:1;font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.projName}</div>
+        <span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};flex-shrink:0;"><span class="dot" style="background:${d.color};"></span>${d.name}</span>`;
+      activesEl.appendChild(row);
+    });
+  } else {
+    activesEl.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:4px 0;">No active deliverables</div>';
+  }
+
+  // Past contributions
+  const pastSection = document.getElementById('mp-past-section');
+  const pastList    = document.getElementById('mp-past-list');
+  pastList.innerHTML = '';
+  const fmtShortD = s => { const d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('en-US',{month:'short',year:'numeric'}); };
+  const pasts = [];
+  EXISTING.forEach(proj => {
+    if (!proj.teamLog) return;
+    Object.entries(proj.teamLog).forEach(([delId, records]) => {
+      records.forEach(r => {
+        if (r.memberId !== member.id || !r.removedAt) return;
+        pasts.push({ projName: proj.name, delId, addedAt: r.addedAt, removedAt: r.removedAt });
+      });
+    });
+  });
+  if (pasts.length) {
+    pastSection.style.display = '';
+    pasts.forEach(a => {
+      const d = DELIVERABLES[a.delId] || { name: a.delId, color: 'var(--t3)', bg: 'var(--s2)' };
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
+      row.innerHTML = `
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.projName}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:1px;">${fmtShortD(a.addedAt)} – ${fmtShortD(a.removedAt)}</div>
+        </div>
+        <span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};flex-shrink:0;"><span class="dot" style="background:${d.color};"></span>${d.name}</span>`;
+      pastList.appendChild(row);
+    });
+  } else {
+    pastSection.style.display = 'none';
+  }
+}
+
+function enterMpEdit() {
+  showMpMode('edit');
+}
+
+function exitMpEdit() {
+  if (!memberPanelCtx) { closeMemberPanel(); return; }
+  showMpMode('view');
 }
 
 function closeMemberPanel() {
@@ -2111,13 +2299,20 @@ function saveMemberPanel() {
 
   if (memberPanelCtx) {
     Object.assign(memberPanelCtx, { name, initials, role, rate, notes, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
+    saveData();
+    renderTeam();
+    // Return to view mode with updated info
+    document.getElementById('mp-title').textContent    = memberPanelCtx.name;
+    document.getElementById('mp-subtitle').textContent = memberPanelCtx.role || '';
+    renderMpView(memberPanelCtx);
+    showMpMode('view');
   } else {
     const id = name.toLowerCase().replace(/\s+/g,'').slice(0,12) + Date.now().toString(36);
     TEAM_MEMBERS.push({ id, name, initials, role, rate, notes, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
+    saveData();
+    closeMemberPanel();
+    renderTeam();
   }
-  saveData();
-  closeMemberPanel();
-  renderTeam();
 }
 
 function deleteMember() {
