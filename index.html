@@ -494,6 +494,15 @@ select.inp{cursor:pointer;}
       </div>
     </div>
 
+    <!-- Status flags -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+      <div class="label" style="margin-bottom:8px;">Status Flags</div>
+      <div style="display:flex;gap:8px;">
+        <button id="pp-flag-redFlag" onclick="toggleProjFlag('redFlag')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;display:inline-block;"></span>Red Flag</button>
+        <button id="pp-flag-waitingForFeedback" onclick="toggleProjFlag('waitingForFeedback')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#F97316;flex-shrink:0;display:inline-block;"></span>Waiting for Feedback</button>
+      </div>
+    </div>
+
     <!-- Deliverables list -->
     <div style="padding:16px 20px 12px;">
       <div class="label" style="margin-bottom:10px;">Deliverables</div>
@@ -533,6 +542,12 @@ select.inp{cursor:pointer;}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Start</div><input type="date" id="cp-kickoff-input" onchange="cpKickoffChanged(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
       <div style="background:var(--surface);padding:12px 14px;"><div class="label" style="margin-bottom:3px;">Est. End</div><input type="date" id="cp-end-input" onchange="cpEndChanged(this.value)" style="font-size:12px;font-weight:500;background:transparent;border:none;color:var(--t1);outline:none;cursor:pointer;padding:0;width:100%;"></div>
+    </div>
+
+    <!-- Status flags -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <button id="cp-flag-redFlag" onclick="toggleCpFlag('redFlag')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;display:inline-block;"></span>Red Flag</button>
+      <button id="cp-flag-waitingForFeedback" onclick="toggleCpFlag('waitingForFeedback')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#F97316;flex-shrink:0;display:inline-block;"></span>Waiting for Feedback</button>
     </div>
 
     <!-- Deliverables -->
@@ -786,6 +801,8 @@ function normalizeProjects() {
     if (!proj.overrides)     proj.overrides    = {};
     if (!proj.deliverables)  proj.deliverables  = [];
     if (!proj.comments)      proj.comments      = [];
+    if (proj.redFlag === undefined)            proj.redFlag = false;
+    if (proj.waitingForFeedback === undefined) proj.waitingForFeedback = false;
   });
 }
 
@@ -1082,8 +1099,11 @@ function renderProjects() {
     const row = document.createElement('div');
     row.className = 'tr';
     if (proj.completed) row.style.opacity = '0.45';
+    const _prf = proj.redFlag ? '<span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _pwf = proj.waitingForFeedback ? '<span style="width:8px;height:8px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _pfd = (_prf || _pwf) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_prf}${_pwf}</span>` : '';
     row.innerHTML = `
-      <div class="cc">${proj.completed ? '<span style="color:var(--accent);">✓</span>' : ''}${proj.name}</div>
+      <div class="cc">${proj.completed ? '<span style="color:var(--accent);">✓</span>' : ''}${_pfd}${proj.name}</div>
       <div>${stageHtml}</div>
       <div class="cc-update">${latestComment ? latestComment.text.replace(/</g,'&lt;') : '<span style="opacity:0.35;">—</span>'}</div>
       <div class="cc-days">${latestComment ? timeAgo(latestComment.ts) : '<span style="opacity:0.35;">—</span>'}</div>
@@ -1127,6 +1147,8 @@ function openClientPanel(proj) {
     document.getElementById('cp-cont-' + s).classList.toggle('active', proj.contract.status === s);
   });
   cpRenderContStatus(proj.contract.status);
+
+  renderFlagToggles(clientPanelCtx, 'cp');
 
   document.getElementById('client-panel').classList.add('open');
   document.getElementById('client-overlay').classList.add('open');
@@ -1370,7 +1392,10 @@ function renderTimeline() {
     nameRow.style.cursor = 'pointer';
     const isCompleteProj = !!proj.completed;
     nameRow.style.opacity = isCompleteProj ? '0.4' : '';
-    nameRow.innerHTML = `${isCompleteProj ? '<span style="color:var(--accent);margin-right:2px;">✓</span>' : ''}${proj.name}`;
+    const _tlrf = proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _tlwf = proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _tlfd = (_tlrf || _tlwf) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_tlrf}${_tlwf}</span>` : '';
+    nameRow.innerHTML = `${isCompleteProj ? '<span style="color:var(--accent);margin-right:2px;">✓</span>' : ''}${_tlfd}${proj.name}`;
     nameRow.title = 'Click to view project details';
     nameRow.addEventListener('click', () => openProjPanel(proj));
     namesBody.appendChild(nameRow);
@@ -1719,6 +1744,37 @@ function saveDelPanel() {
 // ── Project detail panel ──
 let projPanelCtx = null;
 
+function renderFlagToggles(ctx, prefix) {
+  if (!ctx) return;
+  const FLAGS = { redFlag: '#EF4444', waitingForFeedback: '#F97316' };
+  Object.entries(FLAGS).forEach(([flag, color]) => {
+    const btn = document.getElementById(prefix + '-flag-' + flag);
+    if (!btn) return;
+    const on = !!ctx[flag];
+    btn.style.background    = on ? color + '22' : 'var(--s2)';
+    btn.style.borderColor   = on ? color       : 'var(--border)';
+    btn.style.color         = on ? color       : 'var(--t2)';
+  });
+}
+
+function toggleProjFlag(flag) {
+  if (!projPanelCtx) return;
+  projPanelCtx[flag] = !projPanelCtx[flag];
+  renderFlagToggles(projPanelCtx, 'pp');
+  saveData();
+  renderTimeline();
+  renderProjects();
+}
+
+function toggleCpFlag(flag) {
+  if (!clientPanelCtx) return;
+  clientPanelCtx[flag] = !clientPanelCtx[flag];
+  renderFlagToggles(clientPanelCtx, 'cp');
+  saveData();
+  renderTimeline();
+  renderProjects();
+}
+
 function openProjPanel(proj) {
   projPanelCtx = proj;
   document.getElementById('pp-name').textContent = proj.name;
@@ -1757,6 +1813,7 @@ function openProjPanel(proj) {
 
   // Complete button
   updateProjCompleteBtn();
+  renderFlagToggles(projPanelCtx, 'pp');
 
   document.getElementById('proj-panel').classList.add('open');
   document.getElementById('proj-overlay').classList.add('open');
@@ -2067,7 +2124,7 @@ function renderTeamSection(containerId, members) {
       proj.deliverables.forEach(delId => {
         if (proj.completedDels && proj.completedDels[delId]) return;
         const teamIds = proj.team && proj.team[delId] ? proj.team[delId] : [];
-        if (teamIds.includes(m.id)) actives.push({ projName: proj.name, delId });
+        if (teamIds.includes(m.id)) actives.push({ proj, delId });
       });
     });
 
@@ -2075,7 +2132,10 @@ function renderTeamSection(containerId, members) {
     const projHtml = actives.length
       ? actives.map(a => {
           const d = DELIVERABLES[a.delId];
-          return `<div class="tc-pr"><span class="tc-prn">${a.projName}</span><span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};"><span class="dot" style="background:${d.color};"></span>${d.name}</span></div>`;
+          const _trf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
+          const _twf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
+          const _tfd = (_trf || _twf) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;">${_trf}${_twf}</span>` : '';
+          return `<div class="tc-pr"><span class="tc-prn" style="display:flex;align-items:center;">${_tfd}${a.proj.name}</span><span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};"><span class="dot" style="background:${d.color};"></span>${d.name}</span></div>`;
         }).join('')
       : '<div class="tc-empty">No active deliverables</div>';
 
@@ -2168,16 +2228,19 @@ function renderMpView(member) {
     proj.deliverables.forEach(delId => {
       if (proj.completedDels && proj.completedDels[delId]) return;
       const teamIds = proj.team && proj.team[delId] ? proj.team[delId] : [];
-      if (teamIds.includes(member.id)) actives.push({ projName: proj.name, delId });
+      if (teamIds.includes(member.id)) actives.push({ proj, delId });
     });
   });
   if (actives.length) {
     actives.forEach(a => {
       const d = DELIVERABLES[a.delId];
+      const _mrf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
+      const _mwf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
+      const _mfd = (_mrf || _mwf) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;flex-shrink:0;">${_mrf}${_mwf}</span>` : '';
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
       row.innerHTML = `
-        <div style="flex:1;font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.projName}</div>
+        <div style="display:flex;align-items:center;flex:1;min-width:0;">${_mfd}<span style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.proj.name}</span></div>
         <span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};flex-shrink:0;"><span class="dot" style="background:${d.color};"></span>${d.name}</span>`;
       activesEl.appendChild(row);
     });
