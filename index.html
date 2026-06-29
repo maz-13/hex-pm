@@ -2098,6 +2098,20 @@ function assignMember(delId, memberId, e) {
 
 document.getElementById('kickoff-date').addEventListener('change', updatePreview);
 
+// ── Task order helpers ──
+function actKey(a) { return a.proj.name + ':' + a.delId; }
+function sortActives(actives, member) {
+  if (!member.taskOrder || !member.taskOrder.length) return actives;
+  return [...actives].sort((a, b) => {
+    const ai = member.taskOrder.indexOf(actKey(a));
+    const bi = member.taskOrder.indexOf(actKey(b));
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+}
+
 // ── Team rendering ──
 function renderTeam() {
   const core        = TEAM_MEMBERS.filter(m => m.type === 'core');
@@ -2128,10 +2142,11 @@ function renderTeamSection(containerId, members) {
         if (teamIds.includes(m.id)) actives.push({ proj, delId });
       });
     });
+    const sorted = sortActives(actives, m);
 
     const skHtml = (m.skills || []).map(s => `<span class="sk">${s}</span>`).join('');
-    const projHtml = actives.length
-      ? actives.map(a => {
+    const projHtml = sorted.length
+      ? sorted.map(a => {
           const d = DELIVERABLES[a.delId];
           const _trf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
           const _twf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
@@ -2231,17 +2246,52 @@ function renderMpView(member) {
       if (teamIds.includes(member.id)) actives.push({ proj, delId });
     });
   });
-  if (actives.length) {
-    actives.forEach(a => {
+  const sorted = sortActives(actives, member);
+  if (sorted.length) {
+    let dragSrc = null;
+    sorted.forEach(a => {
       const d = DELIVERABLES[a.delId];
       const _mrf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
       const _mwf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
       const _mfd = (_mrf || _mwf) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;flex-shrink:0;">${_mrf}${_mwf}</span>` : '';
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;';
+      row.dataset.key = actKey(a);
+      row.draggable = true;
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;cursor:grab;transition:opacity .1s;';
       row.innerHTML = `
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="none" style="flex-shrink:0;opacity:.25;cursor:grab;" xmlns="http://www.w3.org/2000/svg"><circle cx="3" cy="2.5" r="1.5" fill="currentColor"/><circle cx="7" cy="2.5" r="1.5" fill="currentColor"/><circle cx="3" cy="7" r="1.5" fill="currentColor"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/><circle cx="3" cy="11.5" r="1.5" fill="currentColor"/><circle cx="7" cy="11.5" r="1.5" fill="currentColor"/></svg>
         <div style="display:flex;align-items:center;flex:1;min-width:0;">${_mfd}<span style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.proj.name}</span></div>
         <span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};flex-shrink:0;"><span class="dot" style="background:${d.color};"></span>${d.name}</span>`;
+      row.addEventListener('dragstart', e => {
+        dragSrc = row;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => { row.style.opacity = '0.4'; }, 0);
+      });
+      row.addEventListener('dragend', () => {
+        row.style.opacity = '';
+        activesEl.querySelectorAll('[data-key]').forEach(r => { r.style.boxShadow = ''; });
+      });
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (row === dragSrc) return;
+        activesEl.querySelectorAll('[data-key]').forEach(r => { r.style.boxShadow = ''; });
+        const rect = row.getBoundingClientRect();
+        const above = e.clientY < rect.top + rect.height / 2;
+        row.style.boxShadow = above ? 'inset 0 2px 0 var(--accent)' : 'inset 0 -2px 0 var(--accent)';
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragSrc || dragSrc === row) return;
+        const rect = row.getBoundingClientRect();
+        const above = e.clientY < rect.top + rect.height / 2;
+        if (above) activesEl.insertBefore(dragSrc, row);
+        else activesEl.insertBefore(dragSrc, row.nextSibling);
+        activesEl.querySelectorAll('[data-key]').forEach(r => { r.style.boxShadow = ''; });
+        member.taskOrder = [...activesEl.querySelectorAll('[data-key]')].map(r => r.dataset.key);
+        saveData();
+        renderTeam();
+      });
       activesEl.appendChild(row);
     });
   } else {
