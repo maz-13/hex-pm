@@ -280,6 +280,9 @@ select.inp{cursor:pointer;}
     <div><h1 id="view-title">All Projects</h1><div class="topbar-meta" id="view-meta"></div></div>
     <div style="display:flex;align-items:center;gap:6px;">
       <span id="sync-status" style="font-size:10px;color:var(--t3);transition:opacity .5s;opacity:0;"></span>
+      <button id="btn-sort-alpha" onclick="toggleSortAlpha()" title="Sorted A–Z (click for manual order)" style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:var(--accent);cursor:pointer;border-radius:6px;transition:color .15s,background .15s;flex-shrink:0;" onmouseenter="this.style.background='var(--s2)'" onmouseleave="this.style.background='none'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h10"/><path d="M3 12h6"/><path d="M3 19h3"/><path d="M17 5v14"/><path d="M13 15l4 4 4-4"/></svg>
+      </button>
       <button id="btn-filter-completed" onclick="toggleShowCompleted()" title="Hide completed projects" style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:var(--t3);cursor:pointer;border-radius:6px;transition:color .15s,background .15s;flex-shrink:0;" onmouseenter="this.style.background='var(--s2)'" onmouseleave="this.style.background='none'">
         <svg id="icon-eye-open" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         <svg id="icon-eye-closed" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -972,6 +975,22 @@ function toggleShowCompleted() {
   renderTimeline();
 }
 
+// ── Alphabetical sort toggle (default on) ──
+let SORT_ALPHA = true;
+function sortByNameIfEnabled(list) {
+  return SORT_ALPHA ? [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'})) : list;
+}
+function toggleSortAlpha() {
+  SORT_ALPHA = !SORT_ALPHA;
+  const btn = document.getElementById('btn-sort-alpha');
+  if (btn) {
+    btn.style.color = SORT_ALPHA ? 'var(--accent)' : 'var(--t3)';
+    btn.title = SORT_ALPHA ? 'Sorted A–Z (click for manual order)' : 'Manual order (click to sort A–Z)';
+  }
+  renderProjects();
+  renderTimeline();
+}
+
 // ── Project helpers ──
 function getProjEnd(proj) {
   if (!proj.deliverables || !proj.deliverables.length) return parseDate(proj.kickoff);
@@ -1069,7 +1088,7 @@ function renderProjects() {
   const badge = document.getElementById('proj-badge');
   if (badge) badge.textContent = active.length;
 
-  const visible = SHOW_COMPLETED ? EXISTING : active;
+  const visible = sortByNameIfEnabled(SHOW_COMPLETED ? EXISTING : active);
   if (!visible.length) {
     tbody.innerHTML = EXISTING.length
       ? `<div style="padding:40px 20px;text-align:center;color:var(--t3);font-size:13px;">All projects are completed. <span style="cursor:pointer;color:var(--accent);" onclick="toggleShowCompleted()">Show completed</span></div>`
@@ -1378,7 +1397,7 @@ function renderTimeline() {
   indicator.appendChild(iLine);
   barsScroll.appendChild(indicator);
 
-  const tlVisible = SHOW_COMPLETED ? EXISTING : EXISTING.filter(p => !p.completed);
+  const tlVisible = sortByNameIfEnabled(SHOW_COMPLETED ? EXISTING : EXISTING.filter(p => !p.completed));
   if (!tlVisible.length) {
     namesBody.innerHTML = EXISTING.length
       ? `<div style="padding:20px 14px;font-size:12px;color:var(--t3);">All completed — <span style="cursor:pointer;color:var(--accent);" onclick="toggleShowCompleted()">show all</span></div>`
