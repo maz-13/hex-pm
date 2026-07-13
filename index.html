@@ -466,6 +466,23 @@ select.inp{cursor:pointer;}
   </div>
 </div>
 
+<!-- Ad-hoc task add modal -->
+<div class="panel-overlay" id="task-add-overlay" onclick="closeAddTaskModal()" style="z-index:210;"></div>
+<div id="task-add-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;z-index:211;display:none;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+  <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
+    <div style="font-size:13px;font-weight:600;">New Task</div>
+    <div id="task-add-meta" style="font-size:11px;color:var(--t3);margin-top:2px;"></div>
+  </div>
+  <div style="padding:16px 18px;">
+    <div class="label">Task Name</div>
+    <input class="inp" type="text" id="task-add-name" placeholder="e.g. Character Design" onkeydown="if(event.key==='Enter'){confirmAddTask();}if(event.key==='Escape'){closeAddTaskModal();}">
+  </div>
+  <div style="padding:0 18px 16px;display:flex;gap:8px;">
+    <button class="btn-cancel" onclick="closeAddTaskModal()">Cancel</button>
+    <button class="btn-create" onclick="confirmAddTask()">Add Task</button>
+  </div>
+</div>
+
 <!-- Project detail panel -->
 <div class="panel-overlay" id="proj-overlay" onclick="closeProjPanel()"></div>
 <div class="panel" id="proj-panel">
@@ -805,8 +822,11 @@ function normalizeProjects() {
     if (!proj.overrides)     proj.overrides    = {};
     if (!proj.deliverables)  proj.deliverables  = [];
     if (!proj.comments)      proj.comments      = [];
+    if (!proj.customDels)    proj.customDels    = {};
     if (proj.redFlag === undefined)            proj.redFlag = false;
     if (proj.waitingForFeedback === undefined) proj.waitingForFeedback = false;
+    // Re-inject ad-hoc task definitions into the shared lookup so DELIVERABLES[id] resolves after reload
+    Object.entries(proj.customDels).forEach(([id, def]) => { DELIVERABLES[id] = def; });
   });
 }
 
@@ -1269,7 +1289,7 @@ function renderAddChips(proj, addElId, addFn) {
   const added = new Set(proj.deliverables || []);
   let count = 0;
   Object.entries(DELIVERABLES).forEach(([id, d]) => {
-    if (added.has(id)) return;
+    if (added.has(id) || id.startsWith('custom_')) return;
     count++;
     const chip = document.createElement('button');
     chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:20px;color:var(--t3);cursor:pointer;font-size:11px;transition:all .12s;font-family:inherit;';
@@ -1424,6 +1444,14 @@ function renderTimeline() {
     const barRow = document.createElement('div');
     barRow.className = 'tl-bar-row';
     if (proj.completed) barRow.style.opacity = '0.25';
+    barRow.title = 'Click empty space to add a task';
+    barRow.addEventListener('click', e => {
+      if (e.target !== barRow) return; // ignore clicks bubbled from an existing bar
+      const rect = barRow.getBoundingClientRect();
+      const dayIndex = Math.floor((e.clientX - rect.left) / PX_PER_DAY);
+      openAddTaskModal(proj, addDays(TL_START, dayIndex));
+    });
+    barRow.addEventListener('mouseenter', () => { if (!activeDrag) barRow.style.cursor = 'copy'; });
 
     let cursor = parseDate(proj.kickoff);
     proj.deliverables.forEach(delId => {
@@ -1578,6 +1606,49 @@ function onDragEnd() {
   }
 
   activeDrag = null;
+}
+
+// ── Ad-hoc task creation (click empty timeline space) ──
+let addTaskCtx = null; // { proj, startDate }
+
+function openAddTaskModal(proj, startDate) {
+  addTaskCtx = { proj, startDate };
+  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  document.getElementById('task-add-meta').textContent = `${proj.name} · starting ${fmt(startDate)}`;
+  const input = document.getElementById('task-add-name');
+  input.value = '';
+  document.getElementById('task-add-modal').style.display = 'block';
+  document.getElementById('task-add-overlay').classList.add('open');
+  setTimeout(() => input.focus(), 30);
+}
+
+function closeAddTaskModal() {
+  addTaskCtx = null;
+  document.getElementById('task-add-modal').style.display = 'none';
+  document.getElementById('task-add-overlay').classList.remove('open');
+}
+
+function confirmAddTask() {
+  if (!addTaskCtx) return;
+  const name = document.getElementById('task-add-name').value.trim();
+  if (!name) return;
+  const { proj, startDate } = addTaskCtx;
+  const id  = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const endDate = addDays(startDate, 7);
+  const def = { name, weeks: 1, cost: 0, color: '#9CA3AF', bg: '#1F2430' };
+
+  DELIVERABLES[id] = def;
+  if (!proj.customDels)   proj.customDels   = {};
+  if (!proj.deliverables) proj.deliverables = [];
+  if (!proj.overrides)    proj.overrides    = {};
+  proj.customDels[id] = def;
+  proj.deliverables.push(id);
+  proj.overrides[id] = { startDate: dateToStr(startDate), endDate: dateToStr(endDate) };
+
+  saveData();
+  closeAddTaskModal();
+  renderTimeline();
+  renderProjects();
 }
 
 // ── Deliverable detail panel ──
@@ -2018,6 +2089,7 @@ function buildCustomChecks() {
   const container = document.getElementById('del-checks');
   container.innerHTML = '';
   Object.entries(DELIVERABLES).forEach(([id, d]) => {
+    if (id.startsWith('custom_')) return;
     const div = document.createElement('div');
     div.className = 'del-check' + (selectedCustomDels.has(id) ? ' selected' : '');
     div.innerHTML = `<span class="del-cb"></span><span class="del-color-bar" style="background:${d.color};"></span><div class="del-info"><div class="del-dname">${d.name}</div><div class="del-dmeta">${d.weeks} week${d.weeks>1?'s':''}</div></div>`;
