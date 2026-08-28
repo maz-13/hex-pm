@@ -521,6 +521,7 @@ select.inp{cursor:pointer;}
       <div style="display:flex;gap:8px;">
         <button id="pp-flag-redFlag" onclick="toggleProjFlag('redFlag')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;display:inline-block;"></span>Red Flag</button>
         <button id="pp-flag-waitingForFeedback" onclick="toggleProjFlag('waitingForFeedback')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#F97316;flex-shrink:0;display:inline-block;"></span>Waiting for Feedback</button>
+        <button id="pp-flag-needToAssign" onclick="toggleProjFlag('needToAssign')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;flex-shrink:0;display:inline-block;"></span>Need to Assign</button>
       </div>
     </div>
 
@@ -569,6 +570,7 @@ select.inp{cursor:pointer;}
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button id="cp-flag-redFlag" onclick="toggleCpFlag('redFlag')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;display:inline-block;"></span>Red Flag</button>
       <button id="cp-flag-waitingForFeedback" onclick="toggleCpFlag('waitingForFeedback')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#F97316;flex-shrink:0;display:inline-block;"></span>Waiting for Feedback</button>
+      <button id="cp-flag-needToAssign" onclick="toggleCpFlag('needToAssign')" style="flex:1;display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--s2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);transition:all .15s;font-family:inherit;"><span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;flex-shrink:0;display:inline-block;"></span>Need to Assign</button>
     </div>
 
     <!-- Deliverables -->
@@ -825,6 +827,7 @@ function normalizeProjects() {
     if (!proj.customDels)    proj.customDels    = {};
     if (proj.redFlag === undefined)            proj.redFlag = false;
     if (proj.waitingForFeedback === undefined) proj.waitingForFeedback = false;
+    if (proj.needToAssign === undefined)       proj.needToAssign = false;
     // Re-inject ad-hoc task definitions into the shared lookup so DELIVERABLES[id] resolves after reload
     Object.entries(proj.customDels).forEach(([id, def]) => { DELIVERABLES[id] = def; });
   });
@@ -1141,7 +1144,8 @@ function renderProjects() {
     if (proj.completed) row.style.opacity = '0.45';
     const _prf = proj.redFlag ? '<span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
     const _pwf = proj.waitingForFeedback ? '<span style="width:8px;height:8px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
-    const _pfd = (_prf || _pwf) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_prf}${_pwf}</span>` : '';
+    const _pna = proj.needToAssign ? '<span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _pfd = (_prf || _pwf || _pna) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_prf}${_pwf}${_pna}</span>` : '';
     row.innerHTML = `
       <div class="cc">${proj.completed ? '<span style="color:var(--accent);">✓</span>' : ''}${_pfd}${proj.name}</div>
       <div>${stageHtml}</div>
@@ -1434,7 +1438,8 @@ function renderTimeline() {
     nameRow.style.opacity = isCompleteProj ? '0.4' : '';
     const _tlrf = proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
     const _tlwf = proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
-    const _tlfd = (_tlrf || _tlwf) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_tlrf}${_tlwf}</span>` : '';
+    const _tlna = proj.needToAssign ? '<span style="width:7px;height:7px;border-radius:50%;background:#3B82F6;display:inline-block;flex-shrink:0;"></span>' : '';
+    const _tlfd = (_tlrf || _tlwf || _tlna) ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px;">${_tlrf}${_tlwf}${_tlna}</span>` : '';
     nameRow.innerHTML = `${isCompleteProj ? '<span style="color:var(--accent);margin-right:2px;">✓</span>' : ''}${_tlfd}${proj.name}`;
     nameRow.title = 'Click to view project details';
     nameRow.addEventListener('click', () => openProjPanel(proj));
@@ -1837,7 +1842,7 @@ let projPanelCtx = null;
 
 function renderFlagToggles(ctx, prefix) {
   if (!ctx) return;
-  const FLAGS = { redFlag: '#EF4444', waitingForFeedback: '#F97316' };
+  const FLAGS = { redFlag: '#EF4444', waitingForFeedback: '#F97316', needToAssign: '#3B82F6' };
   Object.entries(FLAGS).forEach(([flag, color]) => {
     const btn = document.getElementById(prefix + '-flag-' + flag);
     if (!btn) return;
@@ -2241,7 +2246,8 @@ function renderTeamSection(containerId, members) {
           const d = DELIVERABLES[a.delId];
           const _trf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
           const _twf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
-          const _tfd = (_trf || _twf) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;">${_trf}${_twf}</span>` : '';
+          const _tna = a.proj.needToAssign ? '<span style="width:7px;height:7px;border-radius:50%;background:#3B82F6;display:inline-block;flex-shrink:0;"></span>' : '';
+          const _tfd = (_trf || _twf || _tna) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;">${_trf}${_twf}${_tna}</span>` : '';
           return `<div class="tc-pr"><span class="tc-prn" style="display:flex;align-items:center;">${_tfd}${a.proj.name}</span><span class="sp" style="font-size:10px;padding:2px 6px;background:${d.bg};color:${d.color};"><span class="dot" style="background:${d.color};"></span>${d.name}</span></div>`;
         }).join('')
       : '<div class="tc-empty">No active deliverables</div>';
@@ -2344,7 +2350,8 @@ function renderMpView(member) {
       const d = DELIVERABLES[a.delId];
       const _mrf = a.proj.redFlag ? '<span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;flex-shrink:0;"></span>' : '';
       const _mwf = a.proj.waitingForFeedback ? '<span style="width:7px;height:7px;border-radius:50%;background:#F97316;display:inline-block;flex-shrink:0;"></span>' : '';
-      const _mfd = (_mrf || _mwf) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;flex-shrink:0;">${_mrf}${_mwf}</span>` : '';
+      const _mna = a.proj.needToAssign ? '<span style="width:7px;height:7px;border-radius:50%;background:#3B82F6;display:inline-block;flex-shrink:0;"></span>' : '';
+      const _mfd = (_mrf || _mwf || _mna) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:4px;flex-shrink:0;">${_mrf}${_mwf}${_mna}</span>` : '';
       const row = document.createElement('div');
       row.dataset.key = actKey(a);
       row.draggable = true;
