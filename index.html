@@ -488,7 +488,7 @@ select.inp{cursor:pointer;}
 <div class="panel" id="proj-panel">
   <div class="panel-head">
     <div>
-      <h2 id="pp-name" style="font-size:15px;font-weight:700;"></h2>
+      <input id="pp-name" type="text" onchange="ppRenameProject(this.value)" title="Click to rename" style="font-size:15px;font-weight:700;background:transparent;border:none;outline:none;padding:0;width:100%;color:var(--t1);font-family:inherit;cursor:text;">
       <div id="pp-sub" style="font-size:11px;color:var(--t3);margin-top:3px;"></div>
     </div>
     <button class="btn-close" onclick="closeProjPanel()">✕</button>
@@ -554,7 +554,7 @@ select.inp{cursor:pointer;}
 <div class="panel" id="client-panel">
   <div class="panel-head">
     <div>
-      <h2 id="cp-name" style="font-size:15px;font-weight:700;"></h2>
+      <input id="cp-name" type="text" onchange="cpRenameProject(this.value)" title="Click to rename" style="font-size:15px;font-weight:700;background:transparent;border:none;outline:none;padding:0;width:100%;color:var(--t1);font-family:inherit;cursor:text;">
       <div id="cp-sub" style="font-size:11px;color:var(--t3);margin-top:3px;"></div>
     </div>
     <button class="btn-close" onclick="closeClientPanel()">✕</button>
@@ -1169,7 +1169,7 @@ function openClientPanel(proj) {
   const endDate = getProjEnd(proj);
   const fmt     = d => d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
 
-  document.getElementById('cp-name').textContent  = proj.name;
+  document.getElementById('cp-name').value  = proj.name;
   document.getElementById('cp-sub').textContent   = currDel
     ? `Current: ${currDel.del.name}`
     : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
@@ -1871,9 +1871,29 @@ function toggleCpFlag(flag) {
   renderProjects();
 }
 
+function renameProject(proj, rawName, inputEl) {
+  if (!proj) return;
+  const name = rawName.trim();
+  if (!name || name === proj.name) { inputEl.value = proj.name; return; }
+  proj.name = name;
+  saveData();
+  renderProjects();
+  renderTimeline();
+  renderTeam();
+  if (memberPanelCtx) renderMpView(memberPanelCtx);
+}
+
+function ppRenameProject(val) {
+  renameProject(projPanelCtx, val, document.getElementById('pp-name'));
+}
+
+function cpRenameProject(val) {
+  renameProject(clientPanelCtx, val, document.getElementById('cp-name'));
+}
+
 function openProjPanel(proj) {
   projPanelCtx = proj;
-  document.getElementById('pp-name').textContent = proj.name;
+  document.getElementById('pp-name').value = proj.name;
 
   // Kickoff + end date
   const kickoff = parseDate(proj.kickoff);
