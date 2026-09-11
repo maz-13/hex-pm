@@ -4,5 +4,9 @@
   "private": true,
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4"
+  },
+  "scripts": {
+    "test": "node --test tests/planner.test.js",
+    "preview": "node tests/preview-server.js"
   }
 }
