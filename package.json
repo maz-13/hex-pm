@@ -7,6 +7,9 @@
   },
   "scripts": {
     "test": "node --test tests/planner.test.js",
-    "preview": "node tests/preview-server.js"
+    "preview": "node tests/preview-server.js",
+    "test:browser": "node tests/browser-check.cjs",
+    "test:assignments": "node tests/assignments-check.cjs",
+    "test:photos": "node tests/profile-photo-check.cjs"
   }
 }

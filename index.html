@@ -336,12 +336,16 @@ select.inp{cursor:pointer;}
     </div>
 
     <div id="v-assignments" class="view">
-      <div class="assign-intro"><div><h2>Put the right people on the work</h2><p>Compare current assignments and upcoming commitments. Counts show deliverables, not hours.</p></div></div>
+      <div class="assign-intro"><h2>Who’s taking what?</h2><p>Select a task on the left. Compare the team’s workload, then assign someone on the right.</p></div>
       <div id="assignment-summary" class="assignment-summary"></div>
-      <div class="assignment-layout"><section><div class="assignment-toolbar">
-        <input id="assignment-search" class="inp" placeholder="Search projects or deliverables" aria-label="Search assignments" oninput="renderAssignmentTasks()">
-        <select id="assignment-filter" class="inp" aria-label="Filter assignments" onchange="renderAssignmentTasks()"><option value="all">All unfinished work</option><option value="unassigned">Needs assignment</option><option value="active">Active now</option><option value="upcoming">Upcoming</option></select>
-      </div><div id="assignment-tasks"></div></section><aside class="workload-sidebar"><h3>Team workload</h3><p class="workflow-muted">Click a person to see their assignments.</p><div id="assignment-people"></div></aside></div>
+      <div class="assignment-layout">
+        <section class="assignment-queue"><div class="assignment-tabs"><button id="queue-needs" onclick="setAssignmentFilter('unassigned')">Needs staffing</button><button id="queue-current" onclick="setAssignmentFilter('active')">All current</button></div>
+          <input id="assignment-search" class="inp" placeholder="Find a project or task…" aria-label="Search assignments" oninput="renderAssignments()">
+          <div id="assignment-tasks"></div>
+          <details id="assignment-upcoming"><summary id="upcoming-label">Plan ahead</summary><p class="workflow-muted">Next stage for each project. Current work comes first.</p><div id="upcoming-tasks"></div></details>
+        </section>
+        <section class="workload-board"><div id="assignment-context"></div><div class="workload-table-head"><span>Team member</span><span>Working on now</span><span>Upcoming</span><span></span></div><div id="assignment-people"></div><p class="workload-footnote">Workload = active deliverables, not hours. Skill matches use the skills saved in Team.</p></section>
+      </div><div id="assignment-feedback" role="status" aria-live="polite"></div>
     </div>
 
   </div>
@@ -457,6 +461,7 @@ select.inp{cursor:pointer;}
     <button id="dp-complete-btn" onclick="toggleDelComplete()" style="width:100%;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--s2);color:var(--t2);font-size:12px;font-weight:600;cursor:pointer;margin-bottom:20px;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;"></button>
 
     <!-- Team assignment -->
+    <div id="dp-staffing"></div>
     <div class="label" style="margin-bottom:10px;">Assigned Team</div>
     <div id="dp-team-list" style="display:flex;flex-direction:column;gap:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;"></div>
 
@@ -639,9 +644,12 @@ select.inp{cursor:pointer;}
 <div class="panel-overlay" id="member-overlay" onclick="closeMemberPanel()"></div>
 <div class="panel" id="member-panel">
   <div class="panel-head">
-    <div>
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+      <div id="mp-header-avatar" style="display:none;"></div>
+      <div>
       <h2 id="mp-title" style="font-size:15px;font-weight:700;"></h2>
       <div id="mp-subtitle" style="font-size:11px;color:var(--t3);margin-top:2px;"></div>
+      </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button id="mp-edit-btn" onclick="enterMpEdit()" style="padding:6px 12px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--t2);font-size:11px;font-weight:500;cursor:pointer;display:none;">Edit</button>
@@ -663,11 +671,17 @@ select.inp{cursor:pointer;}
 
   <!-- EDIT mode -->
   <div id="mp-edit-form" class="panel-body" style="display:none;">
-    <!-- Avatar preview + color -->
+    <!-- Profile photo / initials fallback -->
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
-      <div id="mp-av-preview" style="width:52px;height:52px;border-radius:50%;background:#D97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;letter-spacing:-.5px;"></div>
+      <button type="button" id="mp-av-preview" class="member-photo-editor" onclick="document.getElementById('mp-photo-input').click()" title="Choose profile photo"></button>
       <div style="flex:1;">
-        <div class="label" style="margin-bottom:8px;">Avatar Color</div>
+        <div class="label" style="margin-bottom:8px;">Profile Picture</div>
+        <div style="display:flex;gap:7px;margin-bottom:12px;">
+          <button type="button" class="photo-action" onclick="document.getElementById('mp-photo-input').click()">Choose Photo</button>
+          <button type="button" class="photo-action" id="mp-photo-remove" onclick="removeMemberPhoto()">Remove</button>
+          <input id="mp-photo-input" type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="chooseMemberPhoto(event)">
+        </div>
+        <div class="label" style="margin-bottom:8px;">Fallback Color</div>
         <div id="mp-colors" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
       </div>
     </div>
@@ -1132,7 +1146,7 @@ function renderProjects() {
     const memberIds = (delId && proj.team && proj.team[delId]) || [];
     const avsHtml = memberIds.map(tid => {
       const m = TEAM_MEMBERS.find(t => t.id === tid);
-      return m ? `<span class="av" style="background:${m.color};color:#fff;" title="${m.name}">${m.initials[0]}</span>` : '';
+      return m ? memberAvatar(m, 'av', '', true) : '';
     }).join('');
 
     const stageHtml = del
@@ -1331,6 +1345,7 @@ function cpRemoveDel(delId) {
   if (proj.overrides)     delete proj.overrides[delId];
   if (proj.completedDels) delete proj.completedDels[delId];
   if (proj.timing) delete proj.timing[delId];
+  if (proj.assignmentComplete) delete proj.assignmentComplete[delId];
   if (proj.baseline) delete proj.baseline.deliverables[delId];
   saveData();
   renderCpDelList();
@@ -1477,7 +1492,7 @@ function renderTimeline() {
       const teamIds = proj.team && proj.team[delId] ? proj.team[delId] : [];
       const avHtml = teamIds.map(tid => {
         const m = TEAM_MEMBERS.find(t => t.id === tid);
-        return m ? `<span style="background:${m.color};color:#fff;width:14px;height:14px;border-radius:50%;font-size:7px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-left:-2px;border:1px solid rgba(0,0,0,.3);flex-shrink:0;">${m.initials[0]}</span>` : '';
+        return m ? memberAvatar(m, '', 'width:14px;height:14px;border-radius:50%;font-size:7px;margin-left:-2px;border:1px solid rgba(0,0,0,.3);', true) : '';
       }).join('');
       bar.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;flex:1;pointer-events:none;">${del.name}</span>${avHtml ? `<span style="display:flex;margin-left:4px;pointer-events:none;">${avHtml}</span>` : ''}`;
 
@@ -1702,6 +1717,7 @@ function closeDelPanel() {
 
 function renderDelTeam() {
   const { proj, delId } = delPanelCtx;
+  mountStaffingControl(document.getElementById('dp-staffing'),proj,delId);
   const del = DELIVERABLES[delId];
   const assigned = proj.team && proj.team[delId] ? [...proj.team[delId]] : [];
 
@@ -1717,7 +1733,7 @@ function renderDelTeam() {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);';
       row.innerHTML = `
-        <div style="width:28px;height:28px;border-radius:50%;background:${m.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${m.initials}</div>
+        ${memberAvatar(m, '', 'width:28px;height:28px;border-radius:50%;font-size:10px;')}
         <div style="flex:1;">
           <div style="font-size:12px;font-weight:500;">${m.name}</div>
           <div style="font-size:10px;color:var(--t3);">${m.role}</div>
@@ -1736,7 +1752,7 @@ function renderDelTeam() {
     if (assigned.includes(m.id)) return;
     const chip = document.createElement('div');
     chip.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--s2);border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:11px;transition:all .12s;`;
-    chip.innerHTML = `<span style="width:20px;height:20px;border-radius:50%;background:${m.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;flex-shrink:0;">${m.initials}</span>${m.name}`;
+    chip.innerHTML = `${memberAvatar(m, '', 'width:20px;height:20px;border-radius:50%;font-size:8px;')}${safeText(m.name)}`;
     chip.onmouseenter = () => { chip.style.borderColor = del.color; chip.style.color = del.color; };
     chip.onmouseleave = () => { chip.style.borderColor = 'var(--border)'; chip.style.color = ''; };
     chip.onclick = () => addToDel(m.id);
@@ -1762,7 +1778,7 @@ function renderDelTeam() {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);opacity:.65;';
       row.innerHTML = `
-        <div style="width:24px;height:24px;border-radius:50%;background:${m.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;">${m.initials}</div>
+        ${memberAvatar(m, '', 'width:24px;height:24px;border-radius:50%;font-size:9px;')}
         <div style="flex:1;">
           <div style="font-size:11px;font-weight:500;">${m.name}</div>
           <div style="font-size:10px;color:var(--t3);">${fmtD(r.addedAt)} – ${fmtD(r.removedAt)}</div>
@@ -1813,6 +1829,7 @@ function addToDel(memberId) {
 
 function removeFromDel(memberId) {
   const { proj, delId } = delPanelCtx;
+  proj.assignmentComplete ||= {};proj.assignmentComplete[delId]=false;
   if (proj.team && proj.team[delId]) {
     proj.team[delId] = proj.team[delId].filter(id => id !== memberId);
   }
@@ -1962,7 +1979,7 @@ function renderProjDelList() {
 
     const avs = assigned.map(tid => {
       const m = TEAM_MEMBERS.find(t => t.id === tid);
-      return m ? `<span style="width:18px;height:18px;border-radius:50%;background:${m.color};color:#fff;font-size:7px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-left:-4px;border:1px solid var(--s2);">${m.initials[0]}</span>` : '';
+      return m ? memberAvatar(m, '', 'width:18px;height:18px;border-radius:50%;font-size:7px;margin-left:-4px;border:1px solid var(--s2);', true) : '';
     }).join('');
 
     row.innerHTML = `
@@ -2005,6 +2022,7 @@ function ppRemoveDel(delId) {
   if (proj.overrides)     delete proj.overrides[delId];
   if (proj.completedDels) delete proj.completedDels[delId];
   if (proj.timing) delete proj.timing[delId];
+  if (proj.assignmentComplete) delete proj.assignmentComplete[delId];
   if (proj.baseline) delete proj.baseline.deliverables[delId];
   saveData();
   renderProjDelList();
@@ -2168,7 +2186,7 @@ function updatePreview() {
 
     let avsHtml = assigned.map(tid => {
       const m = TEAM_MEMBERS.find(t => t.id === tid);
-      return m ? `<span class="av" style="background:${m.color};color:#fff;width:20px;height:20px;font-size:8px;">${m.initials}</span>` : '';
+      return m ? memberAvatar(m, 'av', 'width:20px;height:20px;font-size:8px;') : '';
     }).join('');
 
     row.innerHTML = `
@@ -2180,7 +2198,7 @@ function updatePreview() {
         <div class="team-picker">
           <button class="btn-assign" onclick="toggleDropdown('dd-${id}',event)">+ Add</button>
           <div class="team-dropdown" id="dd-${id}">
-            ${TEAM_MEMBERS.map(m => `<div class="td-member" onclick="assignMember('${id}','${m.id}',event)"><span class="td-av" style="background:${m.color};color:#fff;">${m.initials}</span>${m.name}</div>`).join('')}
+            ${TEAM_MEMBERS.map(m => `<div class="td-member" onclick="assignMember('${id}','${m.id}',event)">${memberAvatar(m, 'td-av')}${safeText(m.name)}</div>`).join('')}
           </div>
         </div>
       </div>`;
@@ -2270,7 +2288,7 @@ function renderTeamSection(containerId, members) {
     card.style.cursor = 'pointer';
     card.innerHTML = `
       <div class="tc-head">
-        <div class="tc-av" style="background:${m.color};color:#fff;">${m.initials}</div>
+        ${memberAvatar(m, 'tc-av')}
         <div style="flex:1;min-width:0;">
           <div class="tc-name">${m.name}</div>
           <div class="tc-role">${m.role || ''}</div>
@@ -2293,6 +2311,7 @@ let memberPanelCtx = null;
 let mpSelectedColor = MEMBER_COLORS[0];
 let mpSelectedType  = 'core';
 let mpSkills        = [];
+let mpPhotoData     = '';
 
 function openMemberPanel(member) {
   memberPanelCtx = member;
@@ -2304,6 +2323,8 @@ function openMemberPanel(member) {
   document.getElementById('mp-role').value     = member ? (member.role||'') : '';
   document.getElementById('mp-rate').value     = member ? (member.rate||'') : '';
   document.getElementById('mp-notes').value    = member ? (member.notes||''): '';
+  document.getElementById('mp-photo-input').value = '';
+  mpPhotoData = member ? (member.photo || '') : '';
   mpSelectedColor = member ? member.color : MEMBER_COLORS[0];
   mpSelectedType  = member ? (member.type || 'core') : 'core';
   mpSkills        = member ? [...(member.skills || [])] : [];
@@ -2325,6 +2346,7 @@ function openMemberPanel(member) {
     renderMpView(member);
     showMpMode('view');
   }
+  renderMemberHeaderAvatar(member);
 
   document.getElementById('member-panel').classList.add('open');
   document.getElementById('member-overlay').classList.add('open');
@@ -2474,7 +2496,57 @@ function updateAvPreview() {
   const init = document.getElementById('mp-initials').value.trim();
   const name = document.getElementById('mp-name').value.trim();
   av.style.background = mpSelectedColor;
-  av.textContent = init || name.split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2) || '?';
+  const initials = init || name.split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2) || '?';
+  av.innerHTML = mpPhotoData
+    ? `<img src="${safeText(mpPhotoData)}" alt="Profile photo preview">`
+    : `<span>${safeText(initials)}</span>`;
+  document.getElementById('mp-photo-remove').style.display = mpPhotoData ? '' : 'none';
+}
+
+function renderMemberHeaderAvatar(member) {
+  const host = document.getElementById('mp-header-avatar');
+  if (!member) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  host.style.display = '';
+  host.innerHTML = memberAvatar(member, 'member-header-avatar');
+}
+
+function chooseMemberPhoto(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
+    alert('Choose a JPG, PNG, or WebP image.');
+    event.target.value = '';
+    return;
+  }
+  if (file.size > 12 * 1024 * 1024) {
+    alert('Choose an image smaller than 12 MB.');
+    event.target.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => alert('That image could not be read. Please try another one.');
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => alert('That image could not be opened. Please try another one.');
+    image.onload = () => {
+      const size = Math.min(image.naturalWidth, image.naturalHeight);
+      const sx = Math.floor((image.naturalWidth - size) / 2);
+      const sy = Math.floor((image.naturalHeight - size) / 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      canvas.getContext('2d').drawImage(image, sx, sy, size, size, 0, 0, 256, 256);
+      mpPhotoData = canvas.toDataURL('image/jpeg', 0.82);
+      updateAvPreview();
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeMemberPhoto() {
+  mpPhotoData = '';
+  document.getElementById('mp-photo-input').value = '';
+  updateAvPreview();
 }
 
 function mpAutoInitials() {
@@ -2522,17 +2594,18 @@ function saveMemberPanel() {
   const notes    = document.getElementById('mp-notes').value.trim();
 
   if (memberPanelCtx) {
-    Object.assign(memberPanelCtx, { name, initials, role, rate, notes, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
+    Object.assign(memberPanelCtx, { name, initials, role, rate, notes, photo: mpPhotoData, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
     saveData();
     renderTeam();
     // Return to view mode with updated info
     document.getElementById('mp-title').textContent    = memberPanelCtx.name;
     document.getElementById('mp-subtitle').textContent = memberPanelCtx.role || '';
+    renderMemberHeaderAvatar(memberPanelCtx);
     renderMpView(memberPanelCtx);
     showMpMode('view');
   } else {
     const id = name.toLowerCase().replace(/\s+/g,'').slice(0,12) + Date.now().toString(36);
-    TEAM_MEMBERS.push({ id, name, initials, role, rate, notes, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
+    TEAM_MEMBERS.push({ id, name, initials, role, rate, notes, photo: mpPhotoData, color: mpSelectedColor, type: mpSelectedType, skills: [...mpSkills] });
     saveData();
     closeMemberPanel();
     renderTeam();
@@ -2541,6 +2614,7 @@ function saveMemberPanel() {
 
 function deleteMember() {
   if (!memberPanelCtx) return;
+  EXISTING.forEach(p=>Object.entries(p.team||{}).forEach(([id,members])=>{if(members.includes(memberPanelCtx.id)) {p.assignmentComplete ||= {};p.assignmentComplete[id]=false;}}));
   const idx = TEAM_MEMBERS.indexOf(memberPanelCtx);
   if (idx >= 0) TEAM_MEMBERS.splice(idx, 1);
   saveData();
@@ -2605,6 +2679,7 @@ function createProject() {
   await loadData();
   if (_tb) _tb.textContent = TEAM_MEMBERS.length;
   renderProjects();
+  if(location.hash === '#assignments') showView('assignments',document.querySelector(".ni[onclick*=assignments]"));
 })();
 </script>
 </body>

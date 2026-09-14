@@ -2,6 +2,11 @@
 function safeText(value) {
   return String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function memberAvatar(member,className='',style='',compact=false) {
+  const initials = compact ? String(member.initials || '?').slice(0,1) : (member.initials || '?');
+  const photo = /^data:image\/(?:jpeg|png|webp);base64,/i.test(member.photo || '') ? member.photo : '';
+  return `<span class="member-photo ${safeText(className)}" style="background:${safeText(member.color || '#64748B')};${safeText(style)}" title="${safeText(member.name || '')}">${photo ? `<img src="${safeText(photo)}" alt="">` : safeText(initials)}</span>`;
+}
 function workflowDate(d) { return d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Not set'; }
 function workflowTime(d) { return d ? new Date(d).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not recorded'; }
 function elapsedLabel(ms) {
@@ -98,47 +103,88 @@ function refreshWorkflow() {
 function assignmentRows() {
   return EXISTING.filter(p=>!p.completed).flatMap(proj=>HexPlanner.schedule(proj,DELIVERABLES).filter(r=>!r.done).map(r=>({...r,proj,members:(proj.team[r.id]||[]).filter(id=>TEAM_MEMBERS.some(m=>m.id===id))})));
 }
-let assignmentPerson=null;
+function isFullyStaffed(row) {return !!row.members.length && row.proj.assignmentComplete?.[row.id]===true;}
+function mountStaffingControl(container,proj,id) {
+  if(!container) return;
+  const members=(proj.team[id]||[]).filter(mid=>TEAM_MEMBERS.some(m=>m.id===mid));
+  const full=isFullyStaffed({proj,id,members});
+  container.innerHTML=`<label class="staffing-label"><input type="checkbox" role="switch" aria-label="Fully staffed" ${full?'checked':''} ${!members.length?'disabled':''}><span class="staffing-switch"></span><strong>Fully staffed</strong></label><span class="staffing-help">${members.length} assigned · ${full?'Team complete':members.length?'Still needs people':'Add people, then confirm'}</span>`;
+  container.classList.add('staffing-control');
+  container.querySelector('input').onchange=e=>{
+    assignmentLastAction={kind:'staffing',proj,id,before:full};
+    proj.assignmentComplete ||= {};proj.assignmentComplete[id]=e.target.checked;
+    saveData();refreshWorkflow();
+    renderAssignmentFeedback(proj.name+' · '+DELIVERABLES[id].name+(proj.assignmentComplete[id]?' is fully staffed':' needs staffing'));
+  };
+}
+let assignmentSelection=null;
+let assignmentFilter='unassigned';
+let assignmentLastAction=null;
+function setAssignmentFilter(filter) {assignmentFilter=filter;assignmentSelection=null;renderAssignments();}
+function assignmentKey(r) {return EXISTING.indexOf(r.proj)+':'+r.id;}
+function assignmentSkill(r) {
+  if(!r) return null;
+  if(r.id==='development') return {label:'Development',terms:['development','developer','webflow','framer']};
+  if(r.id==='websiteDesign') return {label:'Web design',terms:['web design','website','product design','ui/ux']};
+  if(r.id==='brandVideo') return {label:'Motion',terms:['motion','video','animation']};
+  if(['moodboarding','explorations','iteration','logomarks','brandDev'].includes(r.id)) return {label:'Brand',terms:['brand','identity','art direction']};
+  return null;
+}
 function renderAssignments() {
-  const rows=assignmentRows(), active=rows.filter(r=>r.active), unassigned=rows.filter(r=>!r.members.length);
-  document.getElementById('assignment-summary').innerHTML=`<div><strong>${active.length}</strong><span>Active deliverables</span></div><div><strong>${unassigned.length}</strong><span>Need assignment</span></div><div><strong>${TEAM_MEMBERS.filter(m=>!active.some(r=>r.members.includes(m.id))).length}</strong><span>People with no active tasks</span></div>`;
-  const list=document.getElementById('assignment-people'); list.replaceChildren();
-  if(!TEAM_MEMBERS.length) list.innerHTML='<p class="workflow-muted">Add people in Team to start assigning work.</p>';
-  if(assignmentPerson && !TEAM_MEMBERS.some(m=>m.id===assignmentPerson)) assignmentPerson=null;
-  const counts=m=>({now:rows.filter(r=>r.active&&r.members.includes(m.id)),next:rows.filter(r=>!r.active&&r.members.includes(m.id))});
-  [...TEAM_MEMBERS].sort((a,b)=>counts(a).now.length-counts(b).now.length || a.name.localeCompare(b.name)).forEach(m=>{
-    const c=counts(m), button=document.createElement('button'); button.className='workload-person'+(assignmentPerson===m.id?' selected':'');
-    button.innerHTML=`<div><strong>${safeText(m.name)}</strong><span>${safeText(m.role || (m.type==='core'?'Core team':'Contractor'))}</span></div><div class="workload-count"><b>${c.now.length}</b> active · ${c.next.length} upcoming</div><div class="workload-meter"><i style="width:${Math.min(100,c.now.length/Math.max(1,...TEAM_MEMBERS.map(x=>counts(x).now.length))*100)}%"></i></div><small>${c.now.length?c.now.map(r=>safeText(r.proj.name)+' · '+safeText(DELIVERABLES[r.id].name)).join('<br>'):'No active assignments'}</small>`;
-    button.onclick=()=>{assignmentPerson=assignmentPerson===m.id?null:m.id;renderAssignments();}; list.append(button);
-  });
-  renderAssignmentTasks();
-}
-function renderAssignmentTasks() {
-  const all=assignmentRows();
+  const rows=assignmentRows(), active=rows.filter(r=>r.active), unassigned=active.filter(r=>!isFullyStaffed(r));
   const query=document.getElementById('assignment-search').value.toLowerCase().trim();
-  const filter=document.getElementById('assignment-filter').value;
-  const rows=all.filter(r=>(!assignmentPerson||r.members.includes(assignmentPerson))&&(!query||(r.proj.name+' '+DELIVERABLES[r.id].name).toLowerCase().includes(query))&&(filter==='all'||filter==='unassigned'&&!r.members.length||filter==='active'&&r.active||filter==='upcoming'&&!r.active))
-    .sort((a,b)=>Number(b.active)-Number(a.active) || Number(!!a.members.length)-Number(!!b.members.length) || a.proj.name.localeCompare(b.proj.name));
-  const list=document.getElementById('assignment-tasks'); list.replaceChildren();
-  if(assignmentPerson) {
-    const reset=document.createElement('button');reset.className='workflow-button';reset.textContent='Showing '+TEAM_MEMBERS.find(m=>m.id===assignmentPerson)?.name+' · Clear';reset.onclick=()=>{assignmentPerson=null;renderAssignments();};list.append(reset);
+  const matches=r=>!query||(r.proj.name+' '+DELIVERABLES[r.id].name).toLowerCase().includes(query);
+  const upcoming=EXISTING.filter(p=>!p.completed).map(p=>rows.find(r=>r.proj===p&&!r.active)).filter(Boolean);
+  let selected=rows.find(r=>assignmentKey(r)===assignmentSelection);
+  if(!selected) {selected=(unassigned.filter(matches)[0]||active.filter(matches)[0]||upcoming.filter(matches)[0]);assignmentSelection=selected?assignmentKey(selected):null;}
+  const available=TEAM_MEMBERS.filter(m=>!active.some(r=>r.members.includes(m.id))).length;
+  document.getElementById('assignment-summary').innerHTML=`<span><b class="needs-number">${unassigned.length}</b> current tasks need staffing</span><span>${active.length} active projects</span><span>${TEAM_MEMBERS.length} people · ${available} with no active tasks</span>`;
+  for(const [id,filter,label,count] of [['queue-needs','unassigned','Needs staffing',unassigned.length],['queue-current','active','All current',active.length]]) {
+    const button=document.getElementById(id);button.textContent=label+' · '+count;button.classList.toggle('selected',assignmentFilter===filter);button.setAttribute('aria-pressed',assignmentFilter===filter);
   }
-  if(!rows.length) {const p=document.createElement('p');p.className='workflow-muted';p.textContent='No deliverables match these filters.';list.append(p);}
-  rows.forEach(r=>{
-    const card=document.createElement('article');card.className='assignment-task';
-    const head=document.createElement('button');head.className='assignment-task-title';
-    head.innerHTML=`<span class="workflow-eyebrow">${safeText(r.proj.name)}</span><strong>${safeText(DELIVERABLES[r.id].name)}</strong><span class="assignment-state ${r.active?'is-active':''}">${r.active?'Active now':'Upcoming'}${!r.members.length?' · Needs assignment':''}</span>`;
-    head.onclick=()=>openWorkflowDeliverable(r.proj,r.id);card.append(head);
-    const chips=document.createElement('div');chips.className='assignment-chips';
-    r.members.forEach(id=>{const m=TEAM_MEMBERS.find(m=>m.id===id), chip=document.createElement('button');chip.className='assignment-chip';chip.textContent=m.name+' ×';chip.title='Remove '+m.name+' from '+DELIVERABLES[r.id].name;chip.onclick=()=>setAssignment(r.proj,r.id,id,false);chips.append(chip);});card.append(chips);
-    const select=document.createElement('select');select.className='inp';select.setAttribute('aria-label','Assign someone to '+r.proj.name+' '+DELIVERABLES[r.id].name);
-    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='+ Assign someone';select.append(placeholder);
-    [...TEAM_MEMBERS].filter(m=>!r.members.includes(m.id)).sort((a,b)=>all.filter(r=>r.active&&r.members.includes(a.id)).length-all.filter(r=>r.active&&r.members.includes(b.id)).length).forEach(m=>{
-      const option=document.createElement('option');option.value=m.id;const own=all.filter(r=>r.members.includes(m.id));option.textContent=`${m.name} — ${own.filter(r=>r.active).length} active, ${own.filter(r=>!r.active).length} upcoming${m.skills?.length?' · '+m.skills.join(', '):''}`;select.append(option);
-    });select.disabled=select.options.length===1;select.onchange=()=>{if(select.value)setAssignment(r.proj,r.id,select.value,true);};card.append(select);list.append(card);
+  const queue=document.getElementById('assignment-tasks');queue.replaceChildren();
+  const visible=active.filter(matches).filter(r=>assignmentFilter==='active'||!isFullyStaffed(r)||assignmentKey(r)===assignmentSelection);
+  const makeTask=(r,parent)=>{
+    const button=document.createElement('button');button.className='assignment-task'+(assignmentSelection===assignmentKey(r)?' selected':'');button.setAttribute('aria-pressed',assignmentSelection===assignmentKey(r));
+    const names=r.members.map(id=>TEAM_MEMBERS.find(m=>m.id===id)?.name.split(' ')[0]).join(', ');
+    button.innerHTML=`<span class="queue-project">${safeText(r.proj.name)}<span class="queue-arrow">↗</span></span><strong>${safeText(DELIVERABLES[r.id].name)}</strong><span class="queue-status ${isFullyStaffed(r)?'':'needs-owner'}">${r.members.length?safeText(names)+(isFullyStaffed(r)?' · Fully staffed':' · Needs more people'):r.active?'No one assigned · Active now':'No one assigned · Upcoming'}</span>`;
+    button.onclick=()=>{assignmentSelection=assignmentKey(r);renderAssignments();};parent.append(button);
+  };
+  visible.sort((a,b)=>a.proj.name.localeCompare(b.proj.name)).forEach(r=>makeTask(r,queue));
+  if(!visible.length) queue.innerHTML='<p class="queue-empty">'+(query?'No matching tasks.':unassigned.length?'Choose another filter.':'All current tasks are fully staffed. ✓')+'</p>';
+  const next=document.getElementById('upcoming-tasks');next.replaceChildren();upcoming.filter(matches).forEach(r=>makeTask(r,next));
+  document.getElementById('upcoming-label').textContent='Plan ahead · '+upcoming.filter(r=>!isFullyStaffed(r)).length+' next stages need staffing';
+  const context=document.getElementById('assignment-context');const skill=assignmentSkill(selected);
+  context.innerHTML=selected?`<div><span class="workflow-eyebrow">${selected.members.length?'TEAM WORKLOAD · MANAGE ASSIGNMENT':'TEAM WORKLOAD · BUILD THE TEAM'}</span><h3>${safeText(DELIVERABLES[selected.id].name)} <span> / ${safeText(selected.proj.name)}</span></h3><p>${skill?safeText(skill.label)+' matches first, then lighter workloads.':'Lighter workloads first.'}</p></div><button class="workflow-button" id="assignment-detail">Task details ↗</button>`:'<div><h3>Team workload</h3><p>Select a task to assign someone.</p></div>';
+  if(selected) {
+    document.getElementById('assignment-detail').onclick=()=>openWorkflowDeliverable(selected.proj,selected.id);
+    const staffing=document.createElement('div');context.firstElementChild.append(staffing);mountStaffingControl(staffing,selected.proj,selected.id);
+  }
+  const list=document.getElementById('assignment-people');list.replaceChildren();
+  const count=m=>({now:active.filter(r=>r.members.includes(m.id)),next:rows.filter(r=>!r.active&&r.members.includes(m.id))});
+  const match=m=>!!skill&&skill.terms.some(term=>(m.skills||[]).some(s=>s.toLowerCase().includes(term)));
+  [...TEAM_MEMBERS].sort((a,b)=>Number(match(b))-Number(match(a))||count(a).now.length-count(b).now.length||a.name.localeCompare(b.name)).forEach(m=>{
+    const c=count(m),assigned=selected?.members.includes(m.id), row=document.createElement('div');row.className='workload-person';row.dataset.member=m.id;
+    row.innerHTML=`<div class="workload-identity">${memberAvatar(m,'person-avatar')}<div><strong>${safeText(m.name)}</strong><small>${match(m)?'<span class="skill-match">'+safeText(skill.label)+' match</span>':safeText(m.role||'Team member')}</small></div></div><div class="current-work"><span class="load-count ${!c.now.length?'load-free':''}">${c.now.length?c.now.length+' active':'No active tasks'}</span><div class="workload-projects"></div></div><div class="next-count" title="${safeText(c.next.map(r=>r.proj.name+' · '+DELIVERABLES[r.id].name).join('\n')||'No upcoming assignments')}">${c.next.length}</div>`;
+    const jobs=row.querySelector('.workload-projects');
+    c.now.forEach(r=>{const link=document.createElement('button');const short={moodboarding:'Moodboard',explorations:'Explorations',iteration:'Revision',brandDev:'Brand dev',websiteDesign:'Web design',development:'Development',brandVideo:'Video'};link.textContent=r.proj.name+' · '+(short[r.id]||DELIVERABLES[r.id].name);link.title=DELIVERABLES[r.id].name;link.onclick=()=>{assignmentSelection=assignmentKey(r);assignmentFilter='active';renderAssignments();};jobs.append(link);});
+    const action=document.createElement('button');action.className='assign-action'+(assigned?' is-assigned':'');action.disabled=!selected;action.textContent=assigned?'Remove':'Assign';action.setAttribute('aria-label',(assigned?'Remove ':'Assign ')+m.name+(selected?' — '+DELIVERABLES[selected.id].name+' for '+selected.proj.name:''));
+    action.onclick=()=>{
+      assignmentLastAction={proj:selected.proj,id:selected.id,memberId:m.id,added:!assigned,staffingBefore:isFullyStaffed(selected)};
+      setAssignment(selected.proj,selected.id,m.id,!assigned);
+      renderAssignmentFeedback(`${m.name} ${assigned?'removed from':'assigned to'} ${selected.proj.name} · ${DELIVERABLES[selected.id].name}`);
+    };row.append(action);list.append(row);
   });
+  if(!TEAM_MEMBERS.length) list.innerHTML='<p class="queue-empty">Add people in Team to start assigning work.</p>';
 }
-function setAssignment(proj,id,memberId,add) {
+function renderAssignmentTasks() {renderAssignments();}
+function renderAssignmentFeedback(message) {
+  const box=document.getElementById('assignment-feedback');box.replaceChildren();box.classList.add('visible');
+  const span=document.createElement('span');span.textContent=message;box.append(span);
+  if(assignmentLastAction) {const undo=document.createElement('button');undo.textContent='Undo';undo.onclick=()=>{const a=assignmentLastAction;assignmentLastAction=null;if(a.kind==='staffing') {a.proj.assignmentComplete[a.id]=a.before;saveData();refreshWorkflow();} else setAssignment(a.proj,a.id,a.memberId,!a.added,a.staffingBefore);renderAssignmentFeedback('Change undone');};box.append(undo);}
+  const close=document.createElement('button');close.textContent='×';close.setAttribute('aria-label','Dismiss assignment update');close.onclick=()=>box.classList.remove('visible');box.append(close);
+}
+function setAssignment(proj,id,memberId,add,staffingOverride) {
   proj.team ||= {}; proj.teamLog ||= {};
   proj.team[id] ||= []; proj.teamLog[id] ||= [];
   const assigned=proj.team[id].includes(memberId);
@@ -146,9 +192,11 @@ function setAssignment(proj,id,memberId,add) {
     proj.team[id].push(memberId);
     if(!proj.teamLog[id].some(r=>r.memberId===memberId&&!r.removedAt)) proj.teamLog[id].push({memberId,addedAt:dateToStr(new Date()),removedAt:null});
   } else if(!add&&assigned) {
+    proj.assignmentComplete ||= {};proj.assignmentComplete[id]=false;
     proj.team[id]=proj.team[id].filter(m=>m!==memberId);
     const log=proj.teamLog[id].find(r=>r.memberId===memberId&&!r.removedAt); if(log)log.removedAt=dateToStr(new Date());
   }
+  if(staffingOverride!==undefined) {proj.assignmentComplete ||= {};proj.assignmentComplete[id]=staffingOverride;}
   saveData(); renderAssignments();
 }
 window.addEventListener('load',()=>{

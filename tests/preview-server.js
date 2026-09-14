@@ -7,9 +7,11 @@ let data={projects:[
  {name:'Northstar',kickoff,deliverables:['moodboarding','explorations','development'],team:{moodboarding:['sam'],explorations:['alex']},completedDels:{},overrides:{}},
  {name:'Future Launch',kickoff:'2027-01-01',deliverables:['moodboarding','websiteDesign'],team:{},completedDels:{},overrides:{}}
 ],team:[{id:'alex',name:'Alex Morgan',initials:'AM',role:'Brand designer',type:'core',skills:['Brand','Strategy'],color:'#7C3AED'},{id:'sam',name:'Sam Rivera',initials:'SR',role:'Designer / developer',type:'core',skills:['Web','Development'],color:'#0891B2'},{id:'jordan',name:'Jordan Lee',initials:'JL',role:'Independent designer',type:'contractor',skills:['Brand','Motion'],color:'#D97706'}]};
-const initial=JSON.stringify(data);
+const smallInitial=JSON.stringify(data);
+const initial=JSON.stringify(require('./demo-data')());
+data=JSON.parse(initial);
 const server=http.createServer((req,res)=>{
- if(req.url==='/__reset' && req.method==='POST') {data=JSON.parse(initial);return res.end('ok');}
+ if(req.url.startsWith('/__reset') && req.method==='POST') {data=JSON.parse(req.url.includes('small=1')?smallInitial:initial);return res.end('ok');}
  if(req.url==='/api/data') {
   res.setHeader('Content-Type','application/json');
   if(req.method==='GET')return res.end(JSON.stringify(data));
@@ -18,6 +20,6 @@ const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://localhost').pathname;
  const file=path.join(root,pathname==='/'?'index.html':pathname);
  if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
- fs.readFile(file,(err,content)=>{if(err){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.png')?'image/png':'text/html');res.end(content);});
+ fs.readFile(file,(err,content)=>{if(err){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.png')?'image/png':'text/html');if(file.endsWith('index.html')) content=content.toString().replace('Who’s taking what?</h2>','Who’s taking what? <span style="font-size:9px;color:#a8b78b;border:1px solid #414b32;padding:4px 7px;border-radius:4px;vertical-align:middle;margin-left:10px">SAMPLE WORKSPACE</span></h2>');res.end(content);});
 });
 server.listen(4178,'127.0.0.1',()=>console.log('Isolated HEX PM preview: http://127.0.0.1:4178'));

@@ -14,12 +14,16 @@ Studio project, timeline, team, and assignment tracker. Production is deployed f
 
 ## Assignments
 
-Assignments shows every unfinished deliverable, with search and active/upcoming/unassigned filters. People can be added or removed directly. Team workload counts distinguish current stages from upcoming commitments; they are task counts, not hourly capacity estimates. Assignments preserve contribution logs.
+Assignments starts with current tasks that need staffing. Multiple people can be assigned to a deliverable. The explicit Fully staffed switch is independent of the member list: adding people does not close the staffing need, and removing a person reopens it. A task with zero valid assignees cannot be marked fully staffed. Existing records without an explicit staffing confirmation remain in the staffing queue for review. The same switch is available in the deliverable panel. Select a task in the queue to compare all team members and assign or remove someone directly. Matching saved skills appear first, followed by lighter active workloads. All current tasks are available in a second tab; next stages are in a collapsed Plan ahead section. Assignment changes can be undone. Workload shows active projects and tasks plus upcoming counts; these are task counts, not hourly capacity estimates. Assignments preserve contribution logs.
 
 ## Local verification
 
-`npm test` runs the pure scheduling regressions. `npm run preview` serves sample projects at http://127.0.0.1:4178. Its API writes only to local process memory; it never uses production credentials. Restarting or POSTing `/__reset` resets the samples.
+`npm test` runs the pure scheduling regressions. `npm run preview` serves sample projects at http://127.0.0.1:4178. The default fictional workspace has 15 active projects and 10 team members, with five stages needing staffing (three empty and two partially staffed) and varied workloads. Its API writes only to local process memory; it never uses production credentials. Restarting or POSTing `/__reset` resets the samples. `/__reset?small=1` selects the small regression fixture. Open `/#assignments` to go directly to Assignments.
 
-With Playwright and Chrome available, `node tests/browser-check.cjs` checks the isolated preview's project pace, timing, assignments, persistence, filters, flags, reopening, and new project creation. `NODE_PATH` may point to an existing Playwright installation.
+With Playwright and Chrome available, `npm run test:browser` checks the isolated preview's project pace, timing, assignments, persistence, filters, flags, reopening, and new project creation. `npm run test:assignments` verifies the realistic assignment workspace, multi-person staffing, skill sorting, workload, assignment removal/undo, and layout. `npm run test:photos` verifies profile photo upload, optimization, display, persistence, removal, and initials fallback. `NODE_PATH` may point to an existing Playwright installation.
 
 The production save API still replaces the shared project/team documents. Saves within one tab are serialized, but simultaneous editors are not merged.
+
+## Team photos
+
+Edit a team member and choose a JPG, PNG, or WebP profile picture. The browser center-crops it to a square, resizes it to 256×256, and stores the optimized image with the member record. The photo appears across Team, Assignments, projects, timeline assignments, and deliverable details. Removing it restores the member's initials and fallback color.
