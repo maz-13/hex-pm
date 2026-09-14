@@ -183,6 +183,13 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0
 .panel-head h2{font-size:14px;font-weight:600;}
 .btn-close{background:none;border:none;cursor:pointer;color:var(--t2);font-size:18px;padding:2px 6px;border-radius:4px;line-height:1;}
 .btn-close:hover{background:var(--s2);color:var(--text);}
+.project-title-wrap{min-width:0;flex:1;margin-right:12px;}
+.project-title-row{display:flex;align-items:center;gap:8px;min-width:0;}
+.project-name-input{font-size:15px;font-weight:700;background:transparent;border:1px solid transparent;border-radius:6px;outline:none;padding:4px 6px 4px 0;width:100%;min-width:0;color:var(--text);font-family:inherit;cursor:default;}
+.project-name-input.is-editing{background:var(--s2);border-color:var(--border);padding-left:8px;cursor:text;}
+.project-name-input:not([readonly]){cursor:text;}
+.project-rename-btn{font:inherit;font-size:10px;font-weight:600;border:1px solid var(--border);background:var(--s2);color:var(--t2);border-radius:6px;padding:5px 8px;cursor:pointer;white-space:nowrap;}
+.project-rename-btn:hover{color:var(--text);border-color:var(--b2);}
 .panel-body{flex:1;overflow-y:auto;padding:20px;}
 .panel-footer{padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;}
 .btn-cancel{flex:1;padding:9px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--t2);cursor:pointer;font-size:12px;font-weight:500;}
@@ -502,8 +509,11 @@ select.inp{cursor:pointer;}
 <div class="panel-overlay" id="proj-overlay" onclick="closeProjPanel()"></div>
 <div class="panel" id="proj-panel">
   <div class="panel-head">
-    <div>
-      <input id="pp-name" type="text" onchange="ppRenameProject(this.value)" title="Click to rename" style="font-size:15px;font-weight:700;background:transparent;border:none;outline:none;padding:0;width:100%;color:var(--t1);font-family:inherit;cursor:text;">
+    <div class="project-title-wrap">
+      <div class="project-title-row">
+        <input id="pp-name" class="project-name-input" type="text" readonly aria-label="Project name" onkeydown="handleProjectRenameKey(event,'pp')" onblur="finishProjectRename('pp',true)">
+        <button id="pp-rename-btn" class="project-rename-btn" onmousedown="event.preventDefault()" onclick="toggleProjectRename('pp')" type="button">Rename</button>
+      </div>
       <div id="pp-sub" style="font-size:11px;color:var(--t3);margin-top:3px;"></div>
     </div>
     <button class="btn-close" onclick="closeProjPanel()">✕</button>
@@ -567,8 +577,11 @@ select.inp{cursor:pointer;}
 <div class="panel-overlay" id="client-overlay" onclick="closeClientPanel()"></div>
 <div class="panel" id="client-panel">
   <div class="panel-head">
-    <div>
-      <input id="cp-name" type="text" onchange="cpRenameProject(this.value)" title="Click to rename" style="font-size:15px;font-weight:700;background:transparent;border:none;outline:none;padding:0;width:100%;color:var(--t1);font-family:inherit;cursor:text;">
+    <div class="project-title-wrap">
+      <div class="project-title-row">
+        <input id="cp-name" class="project-name-input" type="text" readonly aria-label="Client or project name" onkeydown="handleProjectRenameKey(event,'cp')" onblur="finishProjectRename('cp',true)">
+        <button id="cp-rename-btn" class="project-rename-btn" onmousedown="event.preventDefault()" onclick="toggleProjectRename('cp')" type="button">Rename</button>
+      </div>
       <div id="cp-sub" style="font-size:11px;color:var(--t3);margin-top:3px;"></div>
     </div>
     <button class="btn-close" onclick="closeClientPanel()">✕</button>
@@ -1185,6 +1198,7 @@ function openClientPanel(proj) {
   const fmt     = d => d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
 
   document.getElementById('cp-name').value  = proj.name;
+  setProjectRenameEditing('cp', false);
   document.getElementById('cp-sub').textContent   = currDel
     ? `Current: ${currDel.del.name}`
     : `Kickoff ${kickoff.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
@@ -1892,24 +1906,78 @@ function renameProject(proj, rawName, inputEl) {
   const name = rawName.trim();
   if (!name || name === proj.name) { inputEl.value = proj.name; return; }
   proj.name = name;
+  inputEl.value = proj.name;
   saveData();
   renderProjects();
   renderTimeline();
+  renderAssignments();
   renderTeam();
   if (memberPanelCtx) renderMpView(memberPanelCtx);
 }
 
-function ppRenameProject(val) {
-  renameProject(projPanelCtx, val, document.getElementById('pp-name'));
+function projectRenameCtx(prefix) {
+  return prefix === 'pp' ? projPanelCtx : clientPanelCtx;
 }
 
-function cpRenameProject(val) {
-  renameProject(clientPanelCtx, val, document.getElementById('cp-name'));
+function projectRenameInput(prefix) {
+  return document.getElementById(prefix + '-name');
+}
+
+function projectRenameButton(prefix) {
+  return document.getElementById(prefix + '-rename-btn');
+}
+
+function setProjectRenameEditing(prefix, editing) {
+  const input = projectRenameInput(prefix);
+  const btn = projectRenameButton(prefix);
+  if (!input || !btn) return;
+  input.readOnly = !editing;
+  input.classList.toggle('is-editing', editing);
+  btn.textContent = editing ? 'Save' : 'Rename';
+  btn.setAttribute('aria-label', editing ? 'Save project name' : 'Rename project');
+}
+
+function startProjectRename(prefix) {
+  const proj = projectRenameCtx(prefix);
+  const input = projectRenameInput(prefix);
+  if (!proj || !input) return;
+  input.dataset.originalName = proj.name;
+  setProjectRenameEditing(prefix, true);
+  input.focus();
+  input.select();
+}
+
+function finishProjectRename(prefix, commit) {
+  const proj = projectRenameCtx(prefix);
+  const input = projectRenameInput(prefix);
+  if (!proj || !input || input.readOnly) return;
+  if (commit) renameProject(proj, input.value, input);
+  else input.value = input.dataset.originalName || proj.name;
+  setProjectRenameEditing(prefix, false);
+}
+
+function toggleProjectRename(prefix) {
+  const input = projectRenameInput(prefix);
+  if (!input) return;
+  if (input.readOnly) startProjectRename(prefix);
+  else finishProjectRename(prefix, true);
+}
+
+function handleProjectRenameKey(event, prefix) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    finishProjectRename(prefix, true);
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    finishProjectRename(prefix, false);
+  }
 }
 
 function openProjPanel(proj) {
   projPanelCtx = proj;
   document.getElementById('pp-name').value = proj.name;
+  setProjectRenameEditing('pp', false);
 
   // Kickoff + end date
   const kickoff = parseDate(proj.kickoff);
