@@ -16,6 +16,8 @@ Studio project, timeline, team, and assignment tracker. Production is deployed f
 
 Assignments starts with current tasks that need staffing. Multiple people can be assigned to a deliverable. The explicit Fully staffed switch is independent of the member list: adding people does not close the staffing need, and removing a person reopens it. A task with zero valid assignees cannot be marked fully staffed. Existing records without an explicit staffing confirmation remain in the staffing queue for review. The same switch is available in the deliverable panel. Task cards use the deliverable color and show assigned people as an avatar stack. Selecting a task pins its assigned members above a separated Remaining team list. Each person shows only their saved skill tags, current work, upcoming count, and Assign/Remove action. All current tasks are available in a second tab; next stages are in a collapsed Plan ahead section. Assignment changes can be undone. Workload counts deliverables, not hours. Assignments preserve contribution logs.
 
+Project flags are limited to Red Flag and Waiting for Feedback. Staffing status lives in Assignments rather than appearing as a separate project-level Need to Assign flag.
+
 ## Local verification
 
 `npm test` runs the pure scheduling regressions. `npm run preview` serves sample projects at http://127.0.0.1:4178. The default fictional workspace has 15 active projects and 10 team members, with five stages needing staffing (three empty and two partially staffed) and varied workloads. Its API writes only to local process memory; it never uses production credentials. Restarting or POSTing `/__reset` resets the samples. `/__reset?small=1` selects the small regression fixture. Open `/#assignments` to go directly to Assignments.

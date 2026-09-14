@@ -45,7 +45,7 @@ await page.locator('.tl-bar').first().waitFor();
 await page.screenshot({animations:'disabled',path:'/private/tmp/hex-timeline.png'});
 // Reopen from the timeline project panel, then verify downstream reset.
 await page.locator('.tl-name-row').filter({hasText:'Acme Studio'}).click();
-await page.locator('#proj-panel').getByRole('button',{name:'Need to Assign',exact:true}).click();
+assert.equal(await page.getByRole('button',{name:'Need to Assign',exact:true}).count(),0);
 await page.locator('#pp-del-list > div').filter({hasText:'Moodboarding'}).click();
 page.once('dialog',d=>d.accept());
 await page.locator('#dp-complete-btn').click();
