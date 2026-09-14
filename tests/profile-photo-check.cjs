@@ -13,7 +13,13 @@ const assert=require('node:assert/strict');
   await page.locator('#mp-edit-btn').click();
 
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR42mP8z8AARMAgYGRk+A8ABQAB/4z2WQAAAABJRU5ErkJggg==','base64');
-  await page.locator('#mp-photo-input').setInputFiles({name:'alex.png',mimeType:'image/png',buffer:png});
+  await page.evaluate(pngBytes => {
+    const bytes = Uint8Array.from(atob(pngBytes), c => c.charCodeAt(0));
+    const file = new File([bytes], 'clipboard.png', {type:'image/png'});
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(file);
+    document.dispatchEvent(new ClipboardEvent('paste', {clipboardData, bubbles:true, cancelable:true}));
+  }, png.toString('base64'));
   await page.waitForFunction(()=>document.querySelector('#mp-av-preview img')?.src.startsWith('data:image/jpeg;base64,'));
   assert.equal(await page.locator('#mp-av-preview img').count(),1);
   await page.locator('#mp-edit-footer').getByRole('button',{name:'Save',exact:true}).click();
@@ -40,5 +46,5 @@ const assert=require('node:assert/strict');
   assert.deepEqual(errors,[]);
   await page.request.post('http://127.0.0.1:4178/__reset');
   await browser.close();
-  console.log('Profile photos passed: upload, optimized preview, save, Team, Assignments, reload, remove, initials fallback.');
+  console.log('Profile photos passed: clipboard paste, optimized preview, save, Team, Assignments, reload, remove, initials fallback.');
 })().catch(error=>{console.error(error);process.exit(1);});

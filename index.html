@@ -674,11 +674,13 @@ select.inp{cursor:pointer;}
       <button type="button" id="mp-av-preview" class="member-photo-editor" onclick="document.getElementById('mp-photo-input').click()" title="Choose profile photo"></button>
       <div style="flex:1;">
         <div class="label" style="margin-bottom:8px;">Profile Picture</div>
-        <div style="display:flex;gap:7px;margin-bottom:12px;">
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px;">
           <button type="button" class="photo-action" onclick="document.getElementById('mp-photo-input').click()">Choose Photo</button>
+          <button type="button" class="photo-action" id="mp-photo-paste" onclick="pasteMemberPhoto()">Paste from Clipboard</button>
           <button type="button" class="photo-action" id="mp-photo-remove" onclick="removeMemberPhoto()">Remove</button>
           <input id="mp-photo-input" type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="chooseMemberPhoto(event)">
         </div>
+        <div class="photo-paste-hint">Or press ⌘V / Ctrl+V while this editor is open</div>
         <div class="label" style="margin-bottom:8px;">Fallback Color</div>
         <div id="mp-colors" style="display:flex;gap:7px;flex-wrap:wrap;"></div>
       </div>
@@ -2504,17 +2506,16 @@ function renderMemberHeaderAvatar(member) {
   host.innerHTML = memberAvatar(member, 'member-header-avatar');
 }
 
-function chooseMemberPhoto(event) {
-  const file = event.target.files && event.target.files[0];
+function processMemberPhoto(file, input) {
   if (!file) return;
   if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
-    alert('Choose a JPG, PNG, or WebP image.');
-    event.target.value = '';
+    alert('Use a JPG, PNG, or WebP image.');
+    if (input) input.value = '';
     return;
   }
   if (file.size > 12 * 1024 * 1024) {
-    alert('Choose an image smaller than 12 MB.');
-    event.target.value = '';
+    alert('Use an image smaller than 12 MB.');
+    if (input) input.value = '';
     return;
   }
   const reader = new FileReader();
@@ -2536,6 +2537,41 @@ function chooseMemberPhoto(event) {
   };
   reader.readAsDataURL(file);
 }
+
+function chooseMemberPhoto(event) {
+  processMemberPhoto(event.target.files && event.target.files[0], event.target);
+}
+
+async function pasteMemberPhoto() {
+  if (!navigator.clipboard || !navigator.clipboard.read) {
+    alert('Press ⌘V or Ctrl+V to paste an image here.');
+    return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find(type => ['image/jpeg','image/png','image/webp'].includes(type));
+      if (imageType) {
+        processMemberPhoto(await item.getType(imageType));
+        return;
+      }
+    }
+    alert('There is no image in your clipboard.');
+  } catch (error) {
+    alert('Clipboard access was blocked. Press ⌘V or Ctrl+V to paste the image instead.');
+  }
+}
+
+document.addEventListener('paste', event => {
+  const panel = document.getElementById('member-panel');
+  const editForm = document.getElementById('mp-edit-form');
+  if (!panel.classList.contains('open') || editForm.style.display === 'none') return;
+  const image = [...(event.clipboardData?.items || [])]
+    .find(item => item.kind === 'file' && item.type.startsWith('image/'));
+  if (!image) return;
+  event.preventDefault();
+  processMemberPhoto(image.getAsFile());
+});
 
 function removeMemberPhoto() {
   mpPhotoData = '';
