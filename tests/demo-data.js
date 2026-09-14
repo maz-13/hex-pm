@@ -32,7 +32,7 @@ module.exports=function demoData() {
   assignments[stages[current]]=owners;
   if(current<7&&i%3!==0) assignments[stages[current+1]]=[people[(i+4)%people.length][0]];
   const assignmentComplete=Object.fromEntries(Object.keys(assignments).map(id=>[id,id===stages[current]?i>=5:true]));
-  return {assignmentComplete,name,kickoff:date(kickoff),deliverables:stages.slice(0,Math.min(8,current+3)),team:assignments,timing,completedDels,overrides:{},comments:[],customDels:{},teamLog:{},proposal:{status:'pending',url:''},contract:{status:'signed',url:''}};
+  return {assignmentComplete,name,kickoff:date(kickoff),deliverables:stages.slice(0,Math.min(8,current+3)),team:assignments,timing,completedDels,overrides:{},comments:[],customDels:{},teamLog:{},proposal:{status:'pending',url:''},contract:{status:'signed',url:''},redFlag:name==='Atlas',waitingForFeedback:name==='Bloom'};
  });
  return {projects,team};
 };
