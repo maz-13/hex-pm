@@ -119,8 +119,10 @@ function mountStaffingControl(container,proj,id) {
 }
 let assignmentSelection=null;
 let assignmentFilter='unassigned';
+let assignmentIncludeFeedback=false;
 let assignmentLastAction=null;
 function setAssignmentFilter(filter) {assignmentFilter=filter;assignmentSelection=null;renderAssignments();}
+function toggleFeedbackFilter(include) {assignmentIncludeFeedback=include;assignmentSelection=null;renderAssignments();}
 function assignmentKey(r) {return EXISTING.indexOf(r.proj)+':'+r.id;}
 function assignmentStatusFlags(proj) {
   return [
@@ -135,44 +137,66 @@ function assignmentSearchText(r) {
   return [
     r.proj.name,
     DELIVERABLES[r.id].name,
+    assignmentDueLabel(r),
     ...assignmentStatusFlags(r.proj).map(flag=>flag.label)
   ].join(' ').toLowerCase();
+}
+function assignmentDueDate(r) {
+  return r?.end ? new Date(r.end) : null;
+}
+function assignmentDueLabel(r) {
+  const due=assignmentDueDate(r);
+  return due ? 'Due '+due.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Due not set';
+}
+function assignmentSort(a,b) {
+  const feedback=(a.proj.waitingForFeedback?1:0)-(b.proj.waitingForFeedback?1:0);
+  if(feedback) return feedback;
+  const ad=assignmentDueDate(a), bd=assignmentDueDate(b);
+  const due=(ad?+ad:Number.POSITIVE_INFINITY)-(bd?+bd:Number.POSITIVE_INFINITY);
+  return due || a.proj.name.localeCompare(b.proj.name);
 }
 function renderAssignments() {
   const rows=assignmentRows(), active=rows.filter(r=>r.active), unassigned=active.filter(r=>!isFullyStaffed(r));
   const query=document.getElementById('assignment-search').value.toLowerCase().trim();
   const matches=r=>!query||assignmentSearchText(r).includes(query);
-  const upcoming=EXISTING.filter(p=>!p.completed).map(p=>rows.find(r=>r.proj===p&&!r.active)).filter(Boolean);
-  let selected=rows.find(r=>assignmentKey(r)===assignmentSelection);
-  if(!selected) {selected=(unassigned.filter(matches)[0]||active.filter(matches)[0]||upcoming.filter(matches)[0]);assignmentSelection=selected?assignmentKey(selected):null;}
-  const available=TEAM_MEMBERS.filter(m=>!active.some(r=>r.members.includes(m.id))).length;
-  document.getElementById('assignment-summary').innerHTML=`<span><b class="needs-number">${unassigned.length}</b> current tasks need staffing</span><span>${active.length} active projects</span><span>${TEAM_MEMBERS.length} people · ${available} with no active tasks</span>`;
-  for(const [id,filter,label,count] of [['queue-needs','unassigned','Needs staffing',unassigned.length],['queue-current','active','All current',active.length]]) {
+  const visibleRows=assignmentIncludeFeedback?rows:rows.filter(r=>!r.proj.waitingForFeedback);
+  const visibleActive=visibleRows.filter(r=>r.active), visibleUnassigned=visibleActive.filter(r=>!isFullyStaffed(r));
+  const hiddenFeedback=active.filter(r=>r.proj.waitingForFeedback).length;
+  const upcoming=EXISTING.filter(p=>!p.completed).map(p=>visibleRows.find(r=>r.proj===p&&!r.active)).filter(Boolean);
+  const feedbackToggle=document.getElementById('include-feedback');if(feedbackToggle) feedbackToggle.checked=assignmentIncludeFeedback;
+  let selected=visibleRows.find(r=>assignmentKey(r)===assignmentSelection);
+  if(!selected) {selected=(visibleUnassigned.filter(matches)[0]||visibleActive.filter(matches)[0]||upcoming.filter(matches)[0]);assignmentSelection=selected?assignmentKey(selected):null;}
+  const available=TEAM_MEMBERS.filter(m=>!visibleActive.some(r=>r.members.includes(m.id))).length;
+  document.getElementById('assignment-summary').innerHTML=`<span><b class="needs-number">${visibleUnassigned.length}</b> current tasks need staffing</span><span>${visibleActive.length} active projects</span><span>${TEAM_MEMBERS.length} people · ${available} with no active tasks</span>${hiddenFeedback&&!assignmentIncludeFeedback?`<span>${hiddenFeedback} waiting for feedback hidden</span>`:''}`;
+  for(const [id,filter,label,count] of [['queue-needs','unassigned','Needs staffing',visibleUnassigned.length],['queue-current','active','All current',visibleActive.length]]) {
     const button=document.getElementById(id);button.textContent=label+' · '+count;button.classList.toggle('selected',assignmentFilter===filter);button.setAttribute('aria-pressed',assignmentFilter===filter);
   }
   const queue=document.getElementById('assignment-tasks');queue.replaceChildren();
-  const visible=active.filter(matches).filter(r=>assignmentFilter==='active'||!isFullyStaffed(r)||assignmentKey(r)===assignmentSelection);
+  const visible=visibleActive.filter(matches).filter(r=>{
+    if(assignmentFilter==='active') return true;
+    return !isFullyStaffed(r)||assignmentKey(r)===assignmentSelection;
+  });
   const makeTask=(r,parent)=>{
     const button=document.createElement('button');button.className='assignment-task'+(assignmentSelection===assignmentKey(r)?' selected':'');button.setAttribute('aria-pressed',assignmentSelection===assignmentKey(r));
     const definition=DELIVERABLES[r.id];
     const avatars=r.members.map(id=>TEAM_MEMBERS.find(m=>m.id===id)).filter(Boolean).map(m=>memberAvatar(m,'queue-avatar')).join('');
     const statuses=assignmentStatusHtml(r.proj);
-    button.innerHTML=`<span class="queue-project">${safeText(r.proj.name)}<span class="queue-arrow">↗</span></span>${statuses?`<span class="assignment-status-list">${statuses}</span>`:''}<span class="queue-task-tag" style="background:${safeText(definition.bg)};color:${safeText(definition.color)}"><i style="background:${safeText(definition.color)}"></i>${safeText(definition.name)}</span><span class="queue-assignment-line"><span class="queue-avatar-stack">${avatars}</span><span class="queue-status ${isFullyStaffed(r)?'':'needs-owner'}">${r.members.length?(isFullyStaffed(r)?'Fully staffed':'Needs more people'):r.active?'No one assigned':'No one assigned · Upcoming'}</span></span>`;
+    button.innerHTML=`<span class="queue-project">${safeText(r.proj.name)}<span class="queue-arrow">↗</span></span>${statuses?`<span class="assignment-status-list">${statuses}</span>`:''}<span class="queue-task-tag" style="background:${safeText(definition.bg)};color:${safeText(definition.color)}"><i style="background:${safeText(definition.color)}"></i>${safeText(definition.name)}</span><span class="queue-due">${safeText(assignmentDueLabel(r))}</span><span class="queue-assignment-line"><span class="queue-avatar-stack">${avatars}</span><span class="queue-status ${isFullyStaffed(r)?'':'needs-owner'}">${r.members.length?(isFullyStaffed(r)?'Fully staffed':'Needs more people'):r.active?'No one assigned':'No one assigned · Upcoming'}</span></span>`;
     button.onclick=()=>{assignmentSelection=assignmentKey(r);renderAssignments();};parent.append(button);
   };
-  visible.sort((a,b)=>a.proj.name.localeCompare(b.proj.name)).forEach(r=>makeTask(r,queue));
-  if(!visible.length) queue.innerHTML='<p class="queue-empty">'+(query?'No matching tasks.':unassigned.length?'Choose another filter.':'All current tasks are fully staffed. ✓')+'</p>';
-  const next=document.getElementById('upcoming-tasks');next.replaceChildren();upcoming.filter(matches).forEach(r=>makeTask(r,next));
+  visible.sort(assignmentSort).forEach(r=>makeTask(r,queue));
+  if(!visible.length) queue.innerHTML='<p class="queue-empty">'+(query?'No matching tasks.':visibleUnassigned.length?'Choose another filter.':'All current tasks are fully staffed. ✓')+'</p>';
+  const next=document.getElementById('upcoming-tasks');next.replaceChildren();upcoming.filter(matches).sort(assignmentSort).forEach(r=>makeTask(r,next));
   document.getElementById('upcoming-label').textContent='Plan ahead · '+upcoming.filter(r=>!isFullyStaffed(r)).length+' next stages need staffing';
   const context=document.getElementById('assignment-context');
   const selectedDefinition=selected&&DELIVERABLES[selected.id];
-  context.innerHTML=selected?`<div><span class="workflow-eyebrow">${selected.members.length?'TEAM WORKLOAD · MANAGE ASSIGNMENT':'TEAM WORKLOAD · BUILD THE TEAM'}</span><h3><span class="context-task-tag" style="background:${safeText(selectedDefinition.bg)};color:${safeText(selectedDefinition.color)}"><i style="background:${safeText(selectedDefinition.color)}"></i>${safeText(selectedDefinition.name)}</span><span> / ${safeText(selected.proj.name)}</span></h3>${assignmentStatusHtml(selected.proj)?`<div class="assignment-status-list context-statuses">${assignmentStatusHtml(selected.proj)}</div>`:''}</div><button class="workflow-button" id="assignment-detail">Task details ↗</button>`:'<div><h3>Team workload</h3><p>Select a task to assign someone.</p></div>';
+  context.innerHTML=selected?`<div><span class="workflow-eyebrow">${selected.members.length?'TEAM WORKLOAD · MANAGE ASSIGNMENT':'TEAM WORKLOAD · BUILD THE TEAM'}</span><h3><span class="context-task-tag" style="background:${safeText(selectedDefinition.bg)};color:${safeText(selectedDefinition.color)}"><i style="background:${safeText(selectedDefinition.color)}"></i>${safeText(selectedDefinition.name)}</span><span> / ${safeText(selected.proj.name)}</span></h3><div class="context-due">${safeText(assignmentDueLabel(selected))}</div>${assignmentStatusHtml(selected.proj)?`<div class="assignment-status-list context-statuses">${assignmentStatusHtml(selected.proj)}</div>`:''}</div><button class="workflow-button" id="assignment-detail">Task details ↗</button>`:'<div><h3>Team workload</h3><p>Select a task to assign someone.</p></div>';
   if(selected) {
     document.getElementById('assignment-detail').onclick=()=>openWorkflowDeliverable(selected.proj,selected.id);
     const staffing=document.createElement('div');context.firstElementChild.append(staffing);mountStaffingControl(staffing,selected.proj,selected.id);
   }
   const list=document.getElementById('assignment-people');list.replaceChildren();
-  const count=m=>({now:active.filter(r=>r.members.includes(m.id)),next:rows.filter(r=>!r.active&&r.members.includes(m.id))});
+  const count=m=>({now:visibleActive.filter(r=>r.members.includes(m.id)),next:visibleRows.filter(r=>!r.active&&r.members.includes(m.id))});
   const assignedPeople=selected ? TEAM_MEMBERS.filter(m=>selected.members.includes(m.id)).sort((a,b)=>a.name.localeCompare(b.name)) : [];
   const remainingPeople=TEAM_MEMBERS.filter(m=>!selected?.members.includes(m.id)).sort((a,b)=>count(a).now.length-count(b).now.length||a.name.localeCompare(b.name));
   const appendGroupLabel=(label,countValue)=>{
